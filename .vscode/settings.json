@@ -23,6 +23,12 @@
     ],
     "latex-workshop.latex.tools": [
         {
+            "name": "make-thesis",
+            "command": "make",
+            "args": [],
+            "env": {}
+        },
+        {
             "name": "unpack-thuthesis",
             "command": "xetex",
             "args": [
@@ -59,12 +65,6 @@
                 "-outdir=%OUTDIR%",
                 "%DOC%"
             ],
-            "env": {}
-        },
-        {
-            "name": "make-thesis",
-            "command": "make",
-            "args": [],
             "env": {}
         }
     ],
