@@ -3,7 +3,7 @@
 \chapter{相关研究综述}
 本节首先介绍目前主流时序数据库的写入接口设计，然后介绍主流时序数据库存储引擎的设计，最后介绍与数据库客户端以及 RPC 优化有关的工作。
 \section{时序数据库数据写入接口概述}
-在目前市面上流行的时序数据库有四种常见的数据写入方式：SQL 写入、原生接口写入、行协议写入以及 HTTP 请求写入。下面将分别介绍这四种写入方式的特点。
+在目前市面上流行的时序数据库有四种常见的数据写入方式：SQL 写入、原生接口写入、行协议写入以及通过数据通信协议写入。下面将分别介绍这四种写入方式的特点。
 \subsection{SQL 写入}
 这种方式就是通过 SQL 语句进行写入，根据写入数据数据量的不同，又可以分为单行写入、多行写入和多表写入。应用需要先将写入数据的表名以及数据本体转换为 SQL，再通过 JDBC、ODBC 或者数据库的客户端执行 SQL。具有这一类写入接口的时序数据库有 Apache IoTDB、InfluxDB、TDEngine 等，目前 Apache IoTDB 支持单行写入和多行写入，InfluxDB 和 TDEngine 则支持单行写入、多行写入和多表写入。
 
@@ -31,10 +31,33 @@ Apache IoTDB 提供了 \emph{insertTablets} 和 \emph{insertRecords} 两类同�
 此外，使用行协议进行数据写入也具有与 SQL 类似的通用性，不同编程语言 SDK 的开发工作量也相对较小。
 
 使用行协议的具有以下几个缺点。首先，相较于原生接口写入，行协议仍然要求服务器从文本中提取出写入所需要的信息，这一过程会带来一定的开销。其次，行协议是一种文本协议，对于字节流、图片等非结构化数据的写入并不友好。最后，用户在使用行协议写入时可能需要一定都学习成本，因为其并不如 SQL 那样直观。为了解决最后一个缺点，InfluxDB 等数据库推出了一些客户端工具，如 Telegraf\cite{influx2024telegraf}，这些工具对行协议进行了一定的封装，让用户可以以更加直观的方式进行写入。
+
 \subsection{通过数据通信协议写入}
-在这种写入方式中，客户端将数据通过常见的数据通信协议进行打包和发送，服务器接收到数据后进行解包和写入。在物联网场景中，常见的数据通信协议有 MQTT\cite{soni2017survey}、CoAP\cite{bormann2012coap}、AMQP\cite{kramer2009advanced} 等。
+在这种写入方式中，客户端将数据通过常见的数据通信协议进行打包和发送，服务器接收到数据后进行解包和写入。在物联网场景中，常见的数据通信方式有 OPC 协议\cite{zheng2002opc}、MQTT 协议\cite{soni2017survey}、RESTful API 协议\cite{fielding2000architectural} 等。
 
-MQTT
+OPC 协议的全称为 OLE for Process Control，是一种工业通信标准，旨在促进不同制造商的自动化设备、系统和软件之间的数据交换和互操作性。OPC 标准由 OPC Foundation 维护，该组织由多个硬件制造商、软件开发商和系统集成商组成，共同推动和支持这一开放的、独立于平台的通信标准。OPC 有多个版本，其中 OPC UA（Univerised Architecture）是最新的 OPC 通信标准，具有跨平台、加密安全、按需访问等特性\cite{hannelius2008roadmap}，图 \ref{fig:opc-arch} 展示了 OPC 通讯协议的架构图。 在 OPC UA 协议中存在一个 OPC UA Server 的角色，它提供订阅功能，负责进行数据的交换。时序数据库可以向 OPC UA Server 订阅需要写入的时间序列，数据产生后先从客户端上被发往 OPC UA Server，OPC UA Server 再将接收到的数据发送到时序数据库进行写入。
+\begin{figure}
+  \centering
+  \includegraphics[width=0.8\textwidth]{OPC-UA-arch.png}
+  \caption{OPC UA 通讯架构图\cite{leitner2006opc}}
+  \label{fig:opc-arch}
+\end{figure}
 
+
+MQTT 协议的全称为 Message Queuing Telemetry Transport，是一种轻量级的、基于发布/订阅模型的消息传输协议，它专为低带宽、高延迟或不可靠的网络环境设计。MQTT 协议因其设计简洁、占用资源少、通信效率高而广泛应用于物联网、移动应用程序、车载系统和智能家居等场景\cite{yassein2017internet}。图 \ref{fig:mqtt-arch} 展示了使用 MQTT 通讯时的架构图。当数据使用 MQTT 协议写入时，客户端将采集到的数据发送到 MQTT 服务器，MQTT 服务器再将数据发送到对应的订阅者，时序数据库可以作为订阅者接收到数据后进行写入。
+\begin{figure}
+  \centering
+  \includegraphics[width=0.8\textwidth]{mqtt-arch.png}
+  \caption{MQTT 通讯架构图\cite{soni2017survey}}
+  \label{fig:mqtt-arch}
+\end{figure}
+
+RESTful API 的全称是 Representational State Transfer API，指的是一种遵循 REST 风格的 API。RESTful API 通过使用 HTTP 协议的标准方法（如GET、POST、PUT、DELETE）来创建、读取、更新和删除资源，实现客户端和服务器之间的交互。在使用 RESTful API 写入时，客户端通常会向服务器发送一个 POST 请求，并且将需要写入的数据放到 POST 请求的 body 中，服务器接收到请求后解析 body 中的数据，然后进行写入。
+
+在目前主流的时序数据库中，Apache IoTDB 和 InfluxDB 都支持以上三种通讯方式进行数据写入；TDEngine 目前仅支持 RESTful API 写入，但是其官方文档中也提到了未来会支持 MQTT 协议和 OPC 协议写入；Prometheus 目前仅支持 RESTful API 写入，但是有一些第三方开发者为 Prometheus 提供了 MQTT 和 OPC 支持；Apache HoraeDB 则对以上三种写入方式都不支持。
+
+使用这些通信方式进行数据写入有以下几个优点。首先，这些通讯方式的应用比较广泛，市面上存在大量成熟的通讯库可以直接调用，降低了开发者的开发成本。其次，这些通讯方式也对数据的格式没有太大限制，可以方便地传输结构化数据、半结构化数据以及非机构化数据。最后，这些通讯方式也非常灵活，开发者甚至无需使用数据库的 SDK 就可以直接向数据库中写入数据。
+
+使用这样的数据写入方式也存在着一些弊端。首先，这些通讯方式本身并不是为了高性能场景而设计的，因此在性能上可能不如原生接口写入和行协议写入。其次，因为这些协议是为了通用场景而开发的，通过这些协议进行写入时存在的性能优化空间也比较小。因此，大部分使用这些协议的场景都是在数据量较小、写入频率较低的场景下。
 \section{时序数据库存储引擎设计}
 \section{数据库客户端与 RPC 优化}
