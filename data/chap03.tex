@@ -130,7 +130,9 @@ public class Tablet {
 如果使用 \emph{insertRecords}，可以令 Record 的数量积攒到一定程度以后一起发送给服务器进行写入，并且 \emph{insertRecords} 的接口形式更加直观，可以减轻用户侧的复杂度。因此，长安汽车在其业务中选择的就是 \emph{insertRecords} 接口进行数据写入。
 
 但是，从 \ref{sec:chap3-sec1-1} 节中的实验结果不难发现，\emph{insertRecords} 接口虽然有着使用方便的优点，但是其性能与 \emph{insertTablets} 接口有一定的差距。因此，如果我们可以将 \emph{insertRecords} 写入接口的性能提升，那么对于用户而言既可以使用比较友好的接口，省去将数据归类为 Tablet 的繁琐过程，又可以获得不错的写入性能。所以，本文的研究重点是如何在保持 \emph{insertRecords} 接口不变的情况下，通过设计新的底层实现机制，实现高性能的 \emph{insertRecords} 写入。
-\section{Apache IoTDB 中 \emph{insertRecords} 写入的实现}
+
+
+\section{Apache IoTDB 中 \emph{insertRecords} 写入的实现\label{sec:chap3-sec2}}
 在研究如何设计出新的 \emph{insertRecords} 写入实现机制之前，本文先介绍目前 Apache IoTDB 对 \emph{insertRecords} 写入机制的实现。从应用层调用 IoTDB SDK 提供的 \emph{insertRecords} 接口开始，写入会经历客户端侧的数据预处理、RPC 层数据序列化与反序列化、存储引擎侧数据写入内存表以及内存表数据的持久化。下面将详细介绍这个过程。
 \subsection{客户端侧的数据预处理流程}
 客户端在接收到用户传入的写入数据后，需要对数据进行语义校验、划分和封装，其操作如下：
@@ -218,5 +220,123 @@ IoTDB 在收到 RPC 层组装好的 TSInsertRecordsReq 结构体以后首先会�
 
 至此，内存已经保存在了 IoTDB 中。IoTDB 中为了提升查询性能，维护了一些数据缓存以及文件的内存索引。在数据写入内存表后，系统还需要更新数据缓存和文件的内存索引。同时，系统也会记录写入过程中的一系列时间开销，例如记录 WAL 的耗时、写入内存表的耗时等，并将这些统计出来的耗时记录到 IoTDB 的内存框架中。
 \subsection{存储引擎侧数据持久化流程}
+当 IoTDB 的内存表占据的内存到达一定阈值以后，系统就会把内存表持久化到磁盘上，这个过程成为刷盘（Flush）。IoTDB 内存表中刷盘的最基本单位是数据块，也就是一条时间序列在内存中所对应的数据。一个内存数据块会经过编码（Encode）、压缩（Compress）和 I/O 三个阶段的处理最终成为磁盘上的一个数据块，如图（TODO：补充图）这三个过程是异步的过程，互相之间以生产者-消费者模式（Producer-Consumer Pattern）连接。为了在查询时快速定位到磁盘文件的数据块，系统会在每个文件的尾部构建一个当前文件的数据索引。当一个内存表中的所有数据都持久到了磁盘上以后，该内存表占据的内存就会被释放，系统就有了空闲的内存处理新的写入请求。
 \section{当前机制性能分析}
+\subsection{实验与结果分析\label{sec:chap3-sec3-1}}
+在 \ref{sec:chap3-sec2} 节中，本文介绍了 IoTDB 目前的 \emph{insertRecords} 写入机制。从 \ref{sec:chap3-sec1-1} 节的实验中，本文发现在单个写入请求中，如果每个设备的写入行数大于 1 时，通过 \emph{insertRecords} 接口写入的吞吐和延迟均不如 \emph{insertTablets}。本节将使用 Arthas 工具对使用 \emph{insertRecords} 和 \emph{insertTablets} 接口写入的 IoTDB 进行抽样（Profiling），并结合 IoTDB 监控框架所采集到的数据，分析当前 \emph{insertRecords} 性能较差的原因。
+
+
+IoTDB 所使用的配置如表 \ref{tabular:insert-records-profile-iotdb-config} 所示，测试使用的写入工具为 IoT Benchmark\cite{liu2019benchmarking}，其配置如表 \ref{tabular:insert-records-profile-benchmark-config} 所示。使用 Arthas 对 IoTDB 写入过程中各个阶段的 CPU 开销抽样的结果如表 \ref{tabular:insert-records-profile-result} 所示。
+
+从性能分析的结果对比中不难发现，使用 \emph{insertRecords} 写入时，时间序列 ID 检验、元数据校验、计算内存开销、记录写前日志、维护缓存与内存索引以及写入监控信息这几个步骤相较于 \emph{insertTablets} 中的占据的比例都显著更高。从前文的 \emph{insertRecords} 的机制分析中可以推测出这个现象的原因：无论是在预处理阶段还是执行阶段，\emph{insertTablets} 都是一整个 Tablet 一起执行的，一个 Tablet 只需要预处理和写入一次；而 \emph{insertRecords} 是一行行地执行的，每一行数据都要预处理和写入一次。然而，无论是一行还是一个 Tablet，校验一次时间序列 ID、更新一次监控数值、维护一次缓存等的代价都是相同的，而 \emph{insertRecords} 调用这些组件的次数更多，最终造成在这个测试场景中虽然写入的数据量相同，但是 \emph{insertRecords} 的开销比 \emph{insertTablets} 更大，性能也更低。为了避免这样的现象，新的 \emph{insertRecords} 写入机制在存储引擎侧执行时，应该最大程度地进行批量化执行。
+\begin{table}
+  \caption{IoT Benchmark 测试配置表}
+  \centering
+  \begin{tabular}{ll}
+  \toprule
+  配置名称 & 配置描述 \\
+  \midrule
+      写入设备数 &  50000 \\ 
+      每个设备下的时间序列数 & 20 \\ 
+      存储组数量 & 10 \\ 
+      并发写入客户端数 & 25 \\ 
+      单个请求的数据总行数 &  1000 \\ 
+      操作系统 & Ubuntu 20.04.2 LTS，64位 \\
+      JDK 版本 & OpenJDK 11.0.22 \\
+  \bottomrule
+  \end{tabular}
+  \label{tabular:insert-records-profile-benchmark-config}
+\end{table}
+
+\begin{table}
+  \caption{IoTDB 测试配置表}
+  \centering
+  \begin{tabular}{ll}
+  \toprule
+  配置名称 & 配置描述 \\
+  \midrule
+      IoTDB 版本 &  1.1.0 \\ 
+      DataNode 内存 & 28 GB \\ 
+      ConfigNode 内存 & 2GB \\ 
+      IoTDB 部署方式 & 1 ConfigNode + 1 DataNode \\
+      JDK 版本 & OpenJDK 11.0.22 \\
+      操作系统 & Ubuntu 20.04.2 LTS，64位 \\
+      CPU &  Intel I7-11700，8 核 16 线程 \\ 
+      硬盘 & HDD（希捷 ST-16000NM000J） \\ 
+      网络环境 & 1000 Mbps 局域网 \\
+  \bottomrule
+  \end{tabular}
+  \label{tabular:insert-records-profile-iotdb-config}
+\end{table}
+
+\begin{table}
+  \caption{写入各阶段 CPU 占用}
+  \centering
+  \begin{tabular}{lll}
+  \toprule
+  阶段 &  \emph{insertRecords} & \emph{insertTablets} \\
+  \midrule
+      Thrift 反序列化 &  14.14\% & 13.20\% \\ 
+      时间序列 ID 检验 & 17.55\% & 1.38\% \\ 
+      数据结构转换 &  8.65\% & 43.84\% \\ 
+       权限检查 & 0.00\%（非常低，可忽略） &  1.22\%\\ 
+      元数据校验 &  6.66\% & 1.78\% \\ 
+      获取数据分区信息 &  0.97\% & 3.72\% \\
+      计算数据分区与顺乱序 &  0.72\%&  0.73\%  \\
+      计算内存开销 & 5.47\% & 0.55\% \\
+      记录写前日志 & 3.36\% & 0.81\%\\
+      写入内存表 & 12.60\% & 22.93\% \\
+      维护缓存与内存索引 & 10.83\% & 3.72\% \\
+      记录写入中的监控信息 & 19.20\% & 1.13\%\\
+  \bottomrule
+  % 60.1% vs 12.34%
+  \end{tabular}
+  \label{tabular:insert-records-profile-result}
+\end{table}
+
+表 \ref{tabular:wal-vs-tsfile-size} 记录了在上述 IoTDB 和 IoT Benchmark 配置下，使用 \emph{insertTablets} 接口和 \emph{insertRecords} 接口写入 20 分钟以后 IoTDB 向磁盘写入的 TsFile 总大小和写前日志总大小。在运行同样时间的写入后，使用 \emph{insertRecords} 接口不仅比使用 \emph{insertTablets} 接口写入的数据更多，产生的写前日志体积也更小。更多的写前日志意味着系统宝贵的 I/O 资源和内存资源中有相当大一部分被 WAL 占用了，从而导致系统的写入性能下滑。此外，当 WAL 体积过大，导致系统的 I/O 资源紧张无法将 WAL 及时写到磁盘上时，根据前文中所展示的 \emph{insertRecords} 写入流程，写入线程就有可能在向写前日志项队列提交任务时被阻塞，进一步降低了系统的性能。
+
+
+\begin{table}
+  \caption{使用两种接口写入 20 分钟后 TsFile 大小和 WAL 大小}
+  \centering
+  \begin{tabular}{llll}
+  \toprule 
+  接口 & 写入 WAL 总大小 & 写入 TsFile 总大小 & 二者比例 \\
+  \midrule 
+  \emph{insertTablets} &  70 GB & 34 GB &  2.05 \\
+  \emph{insertRecords} & 178 GB & 25 GB & 7.12 \\
+  \bottomrule
+  \end{tabular}
+  \label{tabular:wal-vs-tsfile-size}
+\end{table}
+
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{insertTablets-net.png}
+  \caption{使用 \emph{InsertTablets} 接口写入时网络资源使用情况}
+  \label{fig:curr-insert-tablets-net}
+\end{figure}
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{insertRecords-net.png}
+  \caption{使用 \emph{insertRecords} 接口写入时网络资源使用情况}
+  \label{fig:curr-insert-records-net}
+\end{figure}
+
+
+
+图 \ref{fig:curr-insert-tablets-net} 和图 \ref{fig:curr-insert-records-net} 展示了在进行上述实验时，IoTDB 监控框架所记录的网络资源使用情况。使用 \emph{insertRecords} 接口进行写入时，尽管实际写入的吞吐更少，但是系统所消耗的网络带宽却是使用 \emph{insertTablets} 接口的两倍，并且已经接近系统网络理论带宽的上限。根据前文中对客户端侧数据预处理和 RPC 层网络传输流程的介绍，导致这个现象的原因是 \emph{insertRecords} 在对写入请求进行序列化时，重复序列化了大量的数据（例如同一个设备的多行 Record，都会记录一遍该设备的 ID），导致包含同样数据的 \emph{insertRecords} 请求和 \emph{insertTablets} 请求，前者序列化得到的字节流比后者要更大。
+
+\subsection{当前机制问题小结}
+总结 \ref{sec:chap3-sec3-1} 节中的实验与分析，当前 \emph{insertRecords} 实现机制存在以下问题：
+\begin{itemize}
+  \item 服务器端对写入请求并非批量化执行，导致非核心流程占用了过多的资源，降低了写入效率；
+  \item 相比于 \emph{insertTablets} 接口，\emph{insertRecords} 接口写入数据的 WAL 与 TsFile 比例过大；
+  \item 相比于 \emph{insertTablets} 接口，\emph{insertRecords} 接口的写入请求序列化以后较为臃肿，占用了较多的网络资源。
+\end{itemize}
+
 \section{本章小结}
+本章首先介绍了 Apache IoTDB 中已有的写入接口，并对它们进行了性能和使用场景上的对比，说明了提高 \emph{insertRecords} 接口性能的意义。然后本章介绍了 Apache IoTDB 目前对 \emph{insertRecords} 写入机制的实现，并结合实验与性能分析，说明了目前 \emph{insertRecords} 写入机制存在的问题，为后文设计新的 \emph{insertRecords} 写入机制提供了参考。

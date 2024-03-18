@@ -81,7 +81,7 @@ TDEngine 在单个数据节点中有多个 vnode，每个 vnode 都有一个内�
 \subsection{InfluxDB 存储引擎设计}
 \subsection{Apache HoraeDB 存储引擎设计}
 \subsection{Apache IoTDB 存储引擎设计}
-\section{数据库客户端与数据序列化优化}
+\section{数据库客户端与数据序列化优化\label{sec:chap2-sec3}}
 基于客户端-服务器（Client-Server，CS）架构的数据库几乎都实现了一套自己的客户端协议，其承担着向服务器发送查询/写入请求，接收服务器查询/写入结果的作用，其性能是决定数据库整体性能的关键一环。常见的客户端协议实现有对 JDBC\cite{zukowski2006jdbc} 和 ODBC\cite{geiger1995inside} 接口的实现。为了保持对已有数据库的兼容性，一些数据库系统选择复用现有的数据库客户端协议，例如 RedShift\cite{gupta2015amazon}、Greenplum\cite{lyu2021greenplum}、Vertica\cite{lamb2012vertica}、Hyper\cite{neumann2011efficiently} 都选择实现了 PostgreSQL 的客户端协议，Spark SQL\cite{armbrust2015spark} 选择实现了 Hive 的客户端协议。总之，目前市面上存在着许多不同的客户端协议。
 
 客户端协议的设计是一个需要权衡的问题：如果选择使用激进的压缩和序列化技术，虽然可以减少通过网络传输的数据量，但是会增加序列化和反序列化的时间；如果选择使用保守的客户端协议，虽然会减少序列化和反序化的耗时，但是需要通过网络传输的数据增加了，这会增加网络传输的延迟。Raasveldt 等研究了常见数据库在 TPC-H 数据集\cite{poess2000new}下，对 lineitem 表进行全量查询时查询过程的耗时分布，发现大部分数据库所使用的客户端协议并不高效，占据了整个查询过程中的大部分耗时。随后，他们分析了各类客户端协议的设计以及客户端协议的设计空间（Design Space），最后提出了一个列式的客户端协议，降低了查询的延迟\cite{raasveldt2017don}。
