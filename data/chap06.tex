@@ -92,7 +92,14 @@ FragmentInsertPoolManager 的核心方法是 registerPool 和 submitTask。当�
 
 图 \ref{fig:origin-wal-format} 展示了在原有 IoTDB 的实现中，一个 FragmentInstance 在写入时记录写前日志的流程和格式。对一个 FragmentInstance 中的每一行记录，都需要单独记录一次写前日志，每次都需要重复记录这些记录的时间戳、设备 ID、时间序列 ID 和数值项等，而这其中有相当一部分信息是重复的。这样的设计会导致写前日志的体积过大，对磁盘的写入量也会增加，从而影响写入性能。
 
-// TODO：判断是否要写写前日志批量化的工作
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{批量化wal设计.pdf}
+  \caption{批量化 WAL 序列化设计}
+  \label{fig:batch-wal-design}
+\end{figure}
+
+ 如果要减小写前日志的体积，我们可以参考第 \ref{sec:chap6} 章的设计，将一个 FragmentInstance 中的所有记录集中在一起序列化，并使用字典压缩、Gorilla 编码等方法针对设备 ID、测点 ID、时间戳等各部分进行针对性的压缩。但是这样会显著增加写入时的 CPU 开销，让每次写入的延迟变高，反而有可能降低写入性能。因此，我们决定结合 \ref{sec:chap7-sec4} 节的工作，先将一个 FragmentInstance 中的所有记录集合在一起，然后将它们的设备 ID、时间序列 ID、时间戳等信息统一序列化到写前日志中，图 \ref{fig:batch-wal-design} 展示了将一个 FragmentInstance 中所有记录一起记录写前日志的设计。这样虽然不能减少写前日志的体积，但是可以将具有具有相似性的数据聚集到一起，提高数据的局部性。而压缩算法通常利用数据的冗余信息来进行压缩，提高数据的局部性可以使得后续对数据进行压缩时的效率变得更高。
 \subsubsection{批量化更新监控信息}
  IoTDB 的监控系统负责监控 IoTDB 运行时的各类指标，以便于用户和开发者了解 IoTDB 的状态，并进行运维和调优。
  在 IoTDB 现有的实现中，每写入一个 FragmentInstance 中的一行记录，就需要更新对应的监控信息，包括创建内存表的耗时、写入写前日志的耗时、写入内存表的耗时、更新内存缓存的耗时等。监控系统为这些监控项都维护了对应的直方图，因此每次写入一行记录需要更多这些监控项对应的直方图。从 \ref{sec:chap3-sec3-1} 节中对 \emph{insertRecords} 和 \emph{insertTablets} 的实验中可以看出，\emph{insertRecords} 写入时更新监控信息的开销明显较大。因此，本工作将这些监控信息的更新批量化，每次写入一批数据才更新一次这些监控信息，以减少这些操作对写入性能的影响。
@@ -107,8 +114,54 @@ IoTDB 支持一种名为 Last 查询的查询方式，它可以查询某个时�
 在如今的 \emph{insertRecords} 实现中，写入内存表的操作是行式的，即数据是一行一行地写入到内存表中的。这样的效率并不高，因为每写入一行都要调用许多辅助函数，函数调用的开销无法均摊。此外，这样的写入方式对 CPU 的缓存也并不友好\cite{boncz2005monetdb}。为了提高写入内存表时的效率，本工作将这个过程批量化，在写入之前先对数据进行排序和归类，将写入到同一个内存表的数据聚集到一起，然后一次性地写入到内存表中，以减少函数调用的开销和提高 CPU 缓存的命中率。
 
 \subsection{批量化写入实现}
-本工作对上述批量化执行设计进行了实现。
+本工作对上述批量化执行设计进行了实现，下面分别介绍每项工作的实现细节。
+\subsubsection{批量化写前日志}
+为了将一个 FragmentInstance 中的所有记录一起记录写前日志，我们修改了记录写前日志的位置，将其提前到了内存控制之前。在正式将一个 FragmentInstance 中的所有数据写入到内存表之前，我们会遍历这个 FragmentInstance 中的所有记录，并且使用五个 Buffer 分别记录这些记录的时间戳、设备 ID、时间序列 ID、数据项以及辅助标志数据。当所有记录的内容都被序列化到 Buffer 中后，我们再将这些 Buffer 中的内容依次写入到写前日志中。在这样的实现里，每个 Buffer 中的数据都具有较高的相似性和局部性，即使是使用通用的压缩算法（例如 Snappy、Gzip）也可以获得较好的压缩效果。
+\subsubsection{批量化更新监控信息}
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{统一更新监控.pdf}
+  \caption{批量化更新监控信息设计}
+  \label{fig:batch-update-monitor}
+\end{figure}
+我们将对监控信息的更新从一行记录更新一次减少为了一个写入请求更新一次，图 \ref{fig:batch-update-monitor} 展示了为了达成这一目的的架构。我们增加了一个名为 InsertRecordsMetricsCollector 的类，这个类的每一个实例都只服务于一个 \emph{insertRecords} 请求。这个类中有若干个 AtomicLong 类型的字段，每个字段分别对应了一个监控指标。每个 FragmentInstance 在执行写入时都会记录自己执行时各个阶段的耗时，并将这些耗时更新到 InsertRecordsMetricsCollector 的对应字段中。当所有 FragmentInstance 都执行完毕以后，主写入线程会将 InsertRecordsMetricsCollector 中的每个字段的值分别更新到监控系统中。
 
-\section{写前日志压缩设计与实现}
+虽然 FragmentInstance 在执行时仍然会多次更新 InsertRecordsMetricsCollector 的字段，但是这些更新都只需要简单的 CAS（Compare And Swap）指令即可完成，而更新监控系统则需要执行对直方图的更新，后者显然更加复杂和耗时。因此，在这样的设计下可以降低写入过程中更新监控信息的开销。
+\subsubsection{批量化更新内存缓存}
+与批量化更新监控信息类似，我们将更新内存缓存的操作进行了批量化。在更新内存缓存之前，我们会先对 FragmentInstance 中的数据进行排序和去重，保留每个时间序列的最后一个数据点。然后，我们将这些信息一次性更新到内存缓存中，以减少对内存缓存的更新次数。
+
+算法 \ref{alg:batch-update-cache} 展示了批量化更新内存缓存的伪代码。我们使用了一个 Map 来记录每个时间序列的最后一个数据点，最后将这个 Map 中的内容更新到内存缓存中。理论上，LastCache 本身也是一个 Map 结构，但是 LastCache 是一个需要提供全局访问和更新的数据结构，对它的更新会带来同步开销，因此我们选择了先将数据聚集到一个 Map 中，然后再一次性地更新到 LastCache 中，以减少对 LastCache 的更新次数。
+\begin{algorithm}
+  \caption{批量化更新内存缓存}
+  \label{alg:batch-update-cache}
+  \small
+  \begin{algorithmic}
+    \REQUIRE FragmentInstance
+    \ENSURE LastCache is updated
+    \STATE $n \leftarrow $FragmentInstance.size
+    \STATE $lastCache \leftarrow $new HashMap<TimeSeriesId, Pair<Timestamp, Value>>
+    \FOR{$i=1$ to $n$}
+    \STATE $tsId \leftarrow $FragmentInstance.getTsId($i$)
+    \STATE $timestamp \leftarrow $FragmentInstance.getTimestamp($i$)
+    \STATE $value \leftarrow $FragmentInstance.getValue($i$)
+    \IF{$tsId$ is not in $lastCache$ or $timestamp > lastCache.get(tsId).getKey$}
+    \STATE $lastCache.put(tsId, \langle timestamp, value \rangle)$
+    \ENDIF
+    \ENDFOR
+    \STATE Update LastCache with $lastCache$
+  \end{algorithmic}
+\end{algorithm}
+\subsubsection{批量化写入内存表}
+在正式写入一个 FragmentInstance 之前，我们将这个 FragmentInstance 中的数据按照写入的内存表进行归类。在 IoTDB 中，一个 DataRegion 会为每一个时间分区维护两个内存表，一个写入顺序数据，一个写入乱序数据。因此，我们只要确定每行记录的时间分区范围以及其顺乱序，就可以确定它们要写到哪个内存表，然后将写入一个内存表的数据聚集到一起，一次性地写入到该内存表中。这样的设计有助于减少写入内存表过程中的固定开销，也有助于提高 CPU 缓存的命中率，进而提高写入性能。
+\section{写前日志压缩设计与实现\label{sec:chap7-sec4}}
+在 \ref{sec:chap3-sec3-1} 的实验中，我们对比了 \emph{insertRecords} 写入和 \emph{insertTablets} 写入所产生的 WAL 大小和数据文件大小的比值，其中 \emph{insertRecords} 的这一比值为 7:1，是 \emph{insertTablets} 的两倍还多。这也就意味着，在 IoTDB 使用 \emph{insertRecords} 进行写入时，有接近 90\% 的 I/O 资源都用于写前日志的写入，这无疑会影响写入性能。
+
+为了减少 WAL 的大小，节省系统的 I/O 资源，我们对写前日志进行了压缩。下面介绍 WAL 压缩的设计与实现。
 \subsection{写前日志压缩设计}
+\begin{figure}
+  \centering
+  \includegraphics[width=0.7\linewidth]{WAL-structure.png}
+  \caption{IoTDB 写前日志结构}
+  \label{fig:wal-compress-design}
+\end{figure}
 \subsection{写前日志压缩实现}
