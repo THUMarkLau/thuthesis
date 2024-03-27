@@ -1,186 +1,378 @@
 % !TeX root = ../thuthesis-example.tex
 
-\chapter{服务器端高性能 \emph{insertRecords} 写入机制设计与实现}
-经过客户端的预处理与 RPC 层的数据传输，写入请求最终会到达服务器端。服务器端对写入请求进行预处理后，交由存储引擎负责处理写入请求，并将这些数据最终持久化到磁盘上，服务器端的设计与实现对写入性能有至关重要的影响。如 \ref{sec:chap3-sec3-1} 中的实验结果所示，现有 IoTDB 服务器端对写入请求的处理有较大的性能瓶颈，不能满足高并发写入请求的需求。因此，本章将介绍对 \emph{insertRecords} 写入请求所设计的服务器端高性能写入机制。
+\chapter{\emph{insertRecords} 写入请求序列化设计与实现\label{sec:chap6}}
+第 \ref{chap:client-design} 章介绍了客户端对数据的预处理工作，在客户端的预处理结束后，写入请求需要通过 RPC 层序列化为字节流，传输到服务器侧，再反序列化为写入请求被 IoTDB 服务器处理。本章将介绍在新 \emph{insertRecords} 写入机制中，在 RPC 层序列化写入请求时的数据包结构设计与实现。
+
+\section{写入请求序列化的设计目标}
+正如 \ref{sec:chap2-sec3} 节中所介绍到的，对写入请求的序列化是一个需要权衡的过程：使用复杂的包结构设计可以让请求序列化得到的字节流很小，通过网络传输的开销比较低，但是序列化与反序列化的开销则很大；使用简单的包结构可以减少序列化与反序列化的开销，但是序列化得到的字节流较大，通过网络传输的开销较高。在设计时，设计者需要把握好压缩率与复杂度的平衡点，以获取综合最优的性能。
+
+在对 \emph{insertRecords} 的写入请求进行序列化时，本文的设计目标如下：
+\begin{enumerate}
+  \item 相比于目前简单的序列化方案，新的序列化方案需要针对时序数据的特点，对数据进行一定程度的压缩，以减小数据包的体积，降低网络传输延迟；
+  \item 数据序列化的资源开销需要可控，对 CPU 资源、内存资源的使用要较为轻量；
+  \item 数据序列化设计需要具有可拓展性，以保证未来对序列化方案中增加内容时可以保证兼容性。
+\end{enumerate}
+针对以上以上的设计目标，本文设计了新的 \emph{insertRecords} 写入请求序列化方案。
+
+\section{写入请求序列化总体设计}
+\begin{figure}
+  \centering
+  \includegraphics[width=0.9\linewidth]{rpc-general-design.png}
+  \caption{写入请求序列化总体设计}
+  \label{fig:rpc-general-design}
+\end{figure}
+
+在 \ref{sec:chap3-sec2-2-1} 节中，本文介绍了目前 IoTDB 在 Thrift 中对 \emph{insertRecords} 请求的定义。根据各个字段的实际含义，我们可以将它们分成三大部分：元数据部分、数据部分和辅助信息部分。
+
+元数据部分包括设备 ID 和时间序列 ID，它们描述了待写入数据所对应的时间序列都信息。这部分的数据的呈现形式是文本形式，并且其重复度较高，这里的重复度体现在两个方面：
+\begin{itemize}
+  \item 同一设备或者不同设备的时间序列可能具有相同的 ID，因为它们在现实生活中对应了同样一种类型的实体，例如同样类型的传感器。
+  \item 不同设备之间存在部分重复的内容。这是因为 IoTDB 的设备 ID 遵循一种树形的结构，形如 "root.层级1.层级2.层级3"。如果两个设备位于层级树的同一个子树中，那么它们的 ID 中会包含许多相同的部分。
+\end{itemize}
+针对以上的两个特征，元数据部分非常适合使用字典编码（Dictionary Encoding）进行处理。在本工作的实现中，将元数据部分编码后得到的结果单独保存为一个字节流。
+
+数据部分主要包含时间戳、数值项与数值项的类型。时间戳全都为 8 字节的长整形数据，并且同一个写入请求中不同记录的时间戳可能非常接近；数值项数据可能包含各个类型的数据，如浮点数、整数、字符串等；数据项则都为 1 字节的枚举类型（Enumeration）。数据部分是写入请求序列化后体积最大的部分，对这部分数据进行较为精细化的压缩可以有效减小整个写入请求序列化后的体积。这一部分序列化后的结果也会单独保存为一个字节流。
+
+辅助信息部分主要包括一些标志信息，辅助写入过程中的非核心流程，这部分数据包含会话 ID、数据是否按时间对齐的标志等。这部分数据可能由若干个不同数据类型的标志组成，序列化后的总体积不会很大，因此不需要进行压缩。在未来，\emph{insertRecords} 写入请求中可能会添加更多的辅助信息，因此辅助信息的序列化需要保持一定的拓展性。这一部分序列化后的结果也会单独保存为一个字节流。
+
+下面，本文将分别介绍元数据部分、数据部分和辅助信息部分的序列化设计方案。
 
 
-\section{服务器端 \emph{insertRecords} 写入流程总览}
-\ref{sec:chap3-sec2} 节介绍了 IoTDB 服务器端对 \emph{insertRecords} 写入请求执行的总体流程，新的执行流程和原有流程大体相似，单针对之前实验中发现的瓶颈，本工作进行了重新设计以优化写入性能。
+
+\section{写入请求元数据部分序列化与反序列化方案设计}
+\subsection{序列化过程}
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{schema-encoding.png}
+  \caption{元数据信息序列化方案设计}
+  \label{fig:schema-encoding-general}
+\end{figure}
+
+图 \ref{fig:schema-encoding-general} 展示了对 \emph{insertRecords} 写入请求元数据信息序列化方案的总体设计。整体上，元数据信息采用了字典编码的方式进行序列化，字典编码的基本思想是利用一个字典来存储数据中重复出现的元素或模式，并用更短的编码来代替这些重复元素在原数据中的出现，以此来减少数据的体积。如果一个单词出现的频率越高，那么字典编码实现的数据压缩效果就越好。字典编码的核心步骤有两步：构建字典和利用字典进行编码。
+
+ 算法 \ref{alg:schema-build-dict} 展示了构建元数据信息序列化字典的过程。在 \emph{insertRecords} 的写入请求中，设备 ID 是一个带有层级结构的字符串，不同层级之间通过字符“.”分隔，形如 "root.层级1.层级2.层级3"。如果我们只是简单地将整个设备 ID 作为一个单词加入到字典中，那么只有当一个设备 ID 重复出现时，才有可能再次利用到这个单词。因为字典编码的压缩效果和单词的出现频率有关，所以为了提高单词的出现频率，本工作将一个设备按照层级拆分成多个单词，然后进行编码。例如 “root.sg.test.d1” 就会被拆分成 root、sg、test、d1 四部分，然后对每一个部分单独进行字典编码，并将编码后的结果拼凑到一起，例如如果 root 对应 1， sg 对应 5，test 对应 3，d1 对应 2，那么编码的结果就是 1532。在这样设计下，即使一个 \emph{insertRecords} 写入请求中的每一个设备 ID 都是不同的，只要这些设备之间存在一些共同的前缀，也都可以通过字典编码进行一定程度的压缩。
+
+与设备 ID 不同，时间序列 ID 则是一个没有层级结构的字符串，不同设备之间可能存在时间序列 ID 相同的序列，因此直接使用整个时间序列 ID 进行编码也可以得到一定的压缩效果。为了更加充分地提高压缩效果，在本工作的设计中，设备 ID 和时间序列 ID 的编码使用共同的字典，因为越大的字典越能挖掘出潜在的编码可能性。
 
 \begin{figure}
   \centering
-  \includegraphics[width=0.9\linewidth]{new-storage-engine.pdf}
-  \caption{服务器端 \emph{insertRecords} 写入流程}
-  \label{fig:iotdb-insertRecords-flow}
+  \includegraphics[width=0.55\linewidth]{device-id-encoding-process.png}
+  \caption{每一个设备 ID 编码的过程}
+  \label{fig:device-id-encoding}
 \end{figure}
 
-图 \ref{fig:iotdb-insertRecords-flow} 展示了 \emph{insertRecords} 写入请求到达 IoTDB 服务器端以后的总体执行流程，其中绿色部分代表这些流程与 IoTDB 原有设计基本保持一致，因为它们并不是写入的瓶颈所在；红色部分代表了在原有实现中存在的性能瓶颈，本工作对这些部分进行了重新设计与实现以提高写入性能。
-
-
-在执行分布式写入计划时，一个写入请求会被分为多个写入计划分片（称为 FragmentInstance，FI），每个分片都是写入到一个 DataRegion 中的计划。根据 DataRegion 的分布，可以将其分为本地 DataRegion 和远程 DataRegion，本地 DataRegion 是指存储引擎所在的节点上的 DataRegion，远程 DataRegion 是指存储引擎所在节点以外的 DataRegion。为了充分利用多核 CPU 的计算能力，本工作将写入本地和写入远程 DataRegion 的过程都设计为了多线程并行执行，以提高写入性能。
-
-在存储引擎写入单个计划分片时，不仅需要将数据记录到内存表中，还需要执行记录写前日志、更新监控信息、维护内存索引等操作。这些操作大部分都不是核心的写入操作，但是却会对写入性能产生较大的影响。因此，本工作通过批量化的形式，将这些操作的代价分摊到多行写入记录上，以减少这些操作对写入性能的影响。例如，原本每写入一行记录就需要记录一次写前日志、更新一次监控信息、维护一次内存索引，现在可以将这些操作批量化，每写入一批记录才执行一次这些操作，这样平均到每一条记录上的代价就大大减小了。最后，为了改善前文提到的使用 \emph{insertRecords} 接口进行写入时写前日志过多的问题，本工作对写前日志进行了压缩，减少了写前日志对磁盘的写入量，提高了写入性能。下面将详细介绍这些优化措施的设计与实现。
-
-\section{多线程并行写入设计与实现}
-\subsection{多线程并行写入设计}
-图 \ref{fig:fi-parallel-write} 展示了 FragmentInstance 多线程并行写入的总体架构。多线程并行写入的设计分为写入本地 DataRegion 和写入远程 DataRegion 两部分，下面将分别介绍这两部分的设计。
-
-\begin{figure}
-  \centering
-  \includegraphics[width=\linewidth]{FragmentInstance写入.pdf}
-  \caption{多线程并行写入设计}
-  \label{fig:fi-parallel-write}
-\end{figure}
-
-在一般的系统中，对一项任务的并行执行通常会构建一个线程池负责此工作，以减少线程创建与销毁的开销，在本工作的设计中遵循了这一种范式。因此，想要实现多线程并行写入，我们首先要确定线程池的大小。如果线程池中的线程数过少，那么无法充分利用多核 CPU 的计算能力，从而无法提高写入性能；如果线程池中的线程数过多，那么会增加线程创建与销毁的开销，反而会降低写入性能。根据线程数与 DataRegion 的个数的比例，可以分为多个线程写一个 DataRegion、一个线程写一个 DataRegion 和一个线程写多个 DataRegion 三种情况。在目前 IoTDB 的设计与实现中，每个 DataRegion 都有一个锁，用于保证对 DataRegion 的读写操作是线程安全的。此外，一个 DataRegion 也对应了一个共识组，共识层为了保证数据的一致性，也持有一个锁。在这样的设计下，针对一个 DataRegion 的写入是串行的，即一次只能有一个线程写入一个 DataRegion。
-
-综合以上因素，本工作选择了一个线程写一个本地 DataRegion 的设计，即每个 DataRegion 都有一个专门的线程负责处理这个 DataRegion 的写入任务。为了处理多个写入请求，每个 DataRegion 的线程都会维护一个写入队列，用于存放待写入的数据。不同写入请求对同一个 DataRegion 的写入任务会被放入同一个队列中，该 DataRegion 对应的写入线程会不断从写入队列中取出任务进行处理。为了避免过多任务堆积，任务队列的大小是有限的，超过了队列的大小后，新的写入请求会被拒绝，并向客户端返回写入失败的信息。写入请求向写入队列提交写入任务后，会获得一个 Future 对象，用于知晓写入任务的执行结果。写入任务执行完成后，Future 对象会被设置为完成状态，并且可以通过 Future 对象获取写入任务的执行结果。
-
-对远程 DataRegion 的写入通过网络发送，在系统内缓存了一个全局的客户端池，它们负责将对远程 DataRegion 写入的 FragmentInstance 异步地发送到对应的节点上，并且返回一个 Future 对象，用于后续的处理。
-
-当写入本地 DataRegion 和远程 DataRegion 的 FragmentInstance 都被异步地分发之后，主写入线程会拿到所有这些 FragmentInstance 对应的 Future 对象，并通过这些对象等待它们全部完成，随后将写入结果返回给客户端。
-
-\subsection{多线程并行写入实现}
-为了实现上述的设计，本工作通过一个 FragmentInsertPoolManager 类来管理每个本地 DataRegion 的写入，该类的字段和方法如表 \ref{tabular:fragment-insertion-pool-manager-fields} 和表 \ref{tabular:fragment-insertion-pool-manager-methods} 所示。
-
-\begin{table}
-  \centering
-  \caption{FragmentInsertPoolManager 类字段}
-  \label{tabular:fragment-insertion-pool-manager-fields}
-  \begin{tabular}{lp{5cm}p{5cm}}
-    \toprule
-    字段名 & 字段类型 & 字段描述 \\
-    \midrule
-    instance & FragmentInsertPoolManager & 单例模式 \\
-    executionPoolMap & Map<ConsensusGroupId, ExecutorService> & 记录每个 DataRegion 对应的线程池 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\begin{table}
-  \centering
-  \caption{FragmentInsertPoolManager 类方法}
-  \label{tabular:fragment-insertion-pool-manager-methods}
-  \begin{tabular}{lp{5cm}p{5cm}}
-    \toprule
-    方法名 & 方法参数 & 方法描述 \\
-    \midrule
-    getInstance & 无 & 获取 FragmentInsertPoolManager 的单例 \\
-    registerPool & 一个 DataRegion 以及一个 ExecutorService & 注册这个 DataRegion 对应的写入线程，便于后续的写入任务分发 \\
-    submitTask & ConsensusGroupId 以及写入任务 & 将写入任务提交到对应的 DataRegion 的写入线程池中执行 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-FragmentInsertPoolManager 的核心方法是 registerPool 和 submitTask。当一个 DataRegion 被创建或者恢复时，它会创建一个单线程的线程池，用于执行所有写入到本 DataRegion 的 FragmentInstance，然后调用 FragmentInsertPoolManager 的 registerPool 方法，将这个线程池注册到 FragmentInsertPoolManager 中。当执行写入请求的主线程开始执行分布式写入计划时，它会调用 FragmentInsertPoolManager 的 submitTask 方法，将写入任务提交到对应的 DataRegion 的写入线程池中执行。
-
-对于远程的 DataRegion 写入，本工作通过网络的异步发送来完成并行写入。在 IoTDB 中，每个 DataNode 都为与其他 DataNode 的连接维护了一个全局的客户端池。当需要写入远程 DataRegion 时，主写入线程会从客户端池中获取一个客户端，然后将写入任务通过客户端的异步发送接口发送到对应的 DataNode 上。异步发送接口由 Thrift 实现，这个接口要求上层传入一个回调函数，当发送完成后会调用这个回调函数。主写入线程通过这个回调函数来知晓写入任务的执行结果。
-
-由于网络传输的原因，写入远端 DataRegion 的耗时会更久。为了更高效地执行写入，主写入线程会先发送对远端 DataRegion 的写入请求，然后再将对本地 DataRegion 的写入请求提交到线程池中执行，此时远端和本地的写入都在并行执行。等到所有的写入请求都执行完成后，主写入线程再将写入结果返回给客户端。
-
-\section{批量化写入设计与实现}
-\subsection{批量化写入设计}
-批量化写入一共分为三点：批量化写前日志、批量化更新监控信息和批量化维护内存索引。在 IoTDB 的设计中，每次写入一行数据都会记录一次写前日志、更新一次监控信息和维护一次内存索引，这些操作都会对写入性能产生较大的影响。因此，本工作将这些操作批量化，每次写入一批数据才执行一次这些操作，以减少这些操作对写入性能的影响。
-
-\subsubsection{批量化写前日志}
-\begin{figure}
-  \centering
-  \includegraphics[width=\linewidth]{origin-wal-format.pdf}
-  \caption{原有写入日志格式}
-  \label{fig:origin-wal-format}
-\end{figure}
-
-图 \ref{fig:origin-wal-format} 展示了在原有 IoTDB 的实现中，一个 FragmentInstance 在写入时记录写前日志的流程和格式。对一个 FragmentInstance 中的每一行记录，都需要单独记录一次写前日志，每次都需要重复记录这些记录的时间戳、设备 ID、时间序列 ID 和数值项等，而这其中有相当一部分信息是重复的。这样的设计会导致写前日志的体积过大，对磁盘的写入量也会增加，从而影响写入性能。
-
-\begin{figure}
-  \centering
-  \includegraphics[width=\linewidth]{批量化wal设计.pdf}
-  \caption{批量化 WAL 序列化设计}
-  \label{fig:batch-wal-design}
-\end{figure}
-
- 如果要减小写前日志的体积，我们可以参考第 \ref{sec:chap6} 章的设计，将一个 FragmentInstance 中的所有记录集中在一起序列化，并使用字典压缩、Gorilla 编码等方法针对设备 ID、测点 ID、时间戳等各部分进行针对性的压缩。但是这样会显著增加写入时的 CPU 开销，让每次写入的延迟变高，反而有可能降低写入性能。因此，我们决定结合 \ref{sec:chap7-sec4} 节的工作，先将一个 FragmentInstance 中的所有记录集合在一起，然后将它们的设备 ID、时间序列 ID、时间戳等信息统一序列化到写前日志中，图 \ref{fig:batch-wal-design} 展示了将一个 FragmentInstance 中所有记录一起记录写前日志的设计。这样虽然不能减少写前日志的体积，但是可以将具有具有相似性的数据聚集到一起，提高数据的局部性。而压缩算法通常利用数据的冗余信息来进行压缩，提高数据的局部性可以使得后续对数据进行压缩时的效率变得更高。
-\subsubsection{批量化更新监控信息}
- IoTDB 的监控系统负责监控 IoTDB 运行时的各类指标，以便于用户和开发者了解 IoTDB 的状态，并进行运维和调优。
- 在 IoTDB 现有的实现中，每写入一个 FragmentInstance 中的一行记录，就需要更新对应的监控信息，包括创建内存表的耗时、写入写前日志的耗时、写入内存表的耗时、更新内存缓存的耗时等。监控系统为这些监控项都维护了对应的直方图，因此每次写入一行记录需要更多这些监控项对应的直方图。从 \ref{sec:chap3-sec3-1} 节中对 \emph{insertRecords} 和 \emph{insertTablets} 的实验中可以看出，\emph{insertRecords} 写入时更新监控信息的开销明显较大。因此，本工作将这些监控信息的更新批量化，每次写入一批数据才更新一次这些监控信息，以减少这些操作对写入性能的影响。
-
- 为了实现这一点，我们修改了更新监控信息的时机和逻辑。每行记录在写入时，仍会记录各个阶段的耗时，但不会将这些耗时立马更新到监控系统里，而是将这些耗时记录在一个本地的数据结构中。这个数据结构只记录这一个写入请求的监控指标，当这个写入请求的每一个 FragmentInstance 都写完了以后，再统一将这些监控指标更新到监控系统中。在这样的设计下，原本执行一次 \emph{insertRecords} 更新监控框架的次数为写入数据的行数，现在则变成了一次，这样就大大减少了更新监控信息对写入性能的影响。
-
-\subsubsection{批量化维护内存缓存}
-IoTDB 支持一种名为 Last 查询的查询方式，它可以查询某个时间序列写入数据库的最后一个数据点。为了提高 Last 查询的性能，IoTDB 在内存中维护了一个名为 LastCache 的缓存，其中保存了每个时间序列写入数据库的最后一个数据点。在每次写入时，都需要对这个缓存进行维护。在 IoTDB 的现有实现中，每次写入一行记录都要维护一次这个缓存，这样会导致写入性能下降，从表 \ref{tabular:insert-records-profile-result} 中可以看出，维护内存缓存在 \emph{insertRecords} 写入的性能开销中占有较大的比例。
-
-为了减少维护内存缓存对写入性能的影响，本工作将维护内存缓存的操作批量化，每次写入一个 FragmentInstance 之后才批量化地更新一次缓存。并且，更新缓存之前，先对 FragmentInstance 中的数据进行排序和去重，只更新写入的时间序列的最后一个点。之所以这样设计，是因为 LastCache 的设计比较复杂，反复更新 LastCache 的代价较大，因此我们选择提前处理好数据，以尽可能地减少对 LastCache 的更新。
-\subsubsection{批量化写入内存表}
-在如今的 \emph{insertRecords} 实现中，写入内存表的操作是行式的，即数据是一行一行地写入到内存表中的。这样的效率并不高，因为每写入一行都要调用许多辅助函数，函数调用的开销无法均摊。此外，这样的写入方式对 CPU 的缓存也并不友好\cite{boncz2005monetdb}。为了提高写入内存表时的效率，本工作将这个过程批量化，在写入之前先对数据进行排序和归类，将写入到同一个内存表的数据聚集到一起，然后一次性地写入到内存表中，以减少函数调用的开销和提高 CPU 缓存的命中率。
-
-\subsection{批量化写入实现}
-本工作对上述批量化执行设计进行了实现，下面分别介绍每项工作的实现细节。
-\subsubsection{批量化写前日志}
-为了将一个 FragmentInstance 中的所有记录一起记录写前日志，我们修改了记录写前日志的位置，将其提前到了内存控制之前。在正式将一个 FragmentInstance 中的所有数据写入到内存表之前，我们会遍历这个 FragmentInstance 中的所有记录，并且使用五个 Buffer 分别记录这些记录的时间戳、设备 ID、时间序列 ID、数据项以及辅助标志数据。当所有记录的内容都被序列化到 Buffer 中后，我们再将这些 Buffer 中的内容依次写入到写前日志中。在这样的实现里，每个 Buffer 中的数据都具有较高的相似性和局部性，即使是使用通用的压缩算法（例如 Snappy、Gzip）也可以获得较好的压缩效果。
-\subsubsection{批量化更新监控信息}
-\begin{figure}
-  \centering
-  \includegraphics[width=\linewidth]{统一更新监控.pdf}
-  \caption{批量化更新监控信息设计}
-  \label{fig:batch-update-monitor}
-\end{figure}
-我们将对监控信息的更新从一行记录更新一次减少为了一个写入请求更新一次，图 \ref{fig:batch-update-monitor} 展示了为了达成这一目的的架构。我们增加了一个名为 InsertRecordsMetricsCollector 的类，这个类的每一个实例都只服务于一个 \emph{insertRecords} 请求。这个类中有若干个 AtomicLong 类型的字段，每个字段分别对应了一个监控指标。每个 FragmentInstance 在执行写入时都会记录自己执行时各个阶段的耗时，并将这些耗时更新到 InsertRecordsMetricsCollector 的对应字段中。当所有 FragmentInstance 都执行完毕以后，主写入线程会将 InsertRecordsMetricsCollector 中的每个字段的值分别更新到监控系统中。
-
-虽然 FragmentInstance 在执行时仍然会多次更新 InsertRecordsMetricsCollector 的字段，但是这些更新都只需要简单的 CAS（Compare And Swap）指令即可完成，而更新监控系统则需要执行对直方图的更新，后者显然更加复杂和耗时。因此，在这样的设计下可以降低写入过程中更新监控信息的开销。
-\subsubsection{批量化更新内存缓存}
-与批量化更新监控信息类似，我们将更新内存缓存的操作进行了批量化。在更新内存缓存之前，我们会先对 FragmentInstance 中的数据进行排序和去重，保留每个时间序列的最后一个数据点。然后，我们将这些信息一次性更新到内存缓存中，以减少对内存缓存的更新次数。
-
-算法 \ref{alg:batch-update-cache} 展示了批量化更新内存缓存的伪代码。我们使用了一个 Map 来记录每个时间序列的最后一个数据点，最后将这个 Map 中的内容更新到内存缓存中。理论上，LastCache 本身也是一个 Map 结构，但是 LastCache 是一个需要提供全局访问和更新的数据结构，对它的更新会带来同步开销，因此我们选择了先将数据聚集到一个 Map 中，然后再一次性地更新到 LastCache 中，以减少对 LastCache 的更新次数。
 \begin{algorithm}
-  \caption{批量化更新内存缓存}
-  \label{alg:batch-update-cache}
+  \caption{元数据信息序列化过程构建字典流程}
+  \label{alg:schema-build-dict}
   \small
   \begin{algorithmic}
-    \REQUIRE FragmentInstance
-    \ENSURE LastCache is updated
-    \STATE $n \leftarrow $FragmentInstance.size
-    \STATE $lastCache \leftarrow $new HashMap<TimeSeriesId, Pair<Timestamp, Value>>
+    \REQUIRE \emph{deviceIds} 设备 ID 列表，\emph{timeseriesIDsList} 时间序列 ID 列表
+
+    \STATE 创建一个保序哈希表 \emph{dict}
+    \STATE $n\leftarrow$ \emph{deviceIds}.length
+    \STATE \emph{counter} $\leftarrow 1$
     \FOR{$i=1$ to $n$}
-    \STATE $tsId \leftarrow $FragmentInstance.getTsId($i$)
-    \STATE $timestamp \leftarrow $FragmentInstance.getTimestamp($i$)
-    \STATE $value \leftarrow $FragmentInstance.getValue($i$)
-    \IF{$tsId$ is not in $lastCache$ or $timestamp > lastCache.get(tsId).getKey$}
-    \STATE $lastCache.put(tsId, \langle timestamp, value \rangle)$
-    \ENDIF
+      \STATE \emph{deviceId} = \emph{deviceIds}.at($i$)
+      \STATE 将 \emph{deviceId} 按照 "." 进行切分，得到字符串数组 \emph{words}
+      \FOR{\emph{word} in \emph{words}}
+        \IF{\emph{word} 不在 \emph{dict} 中}
+          \STATE 在 \emph{dict} 中构建映射 \emph{word} $\rightarrow$ \emph{counter}
+          \STATE \emph{counter}$++$
+        \ENDIF
+      \ENDFOR
     \ENDFOR
-    \STATE Update LastCache with $lastCache$
+    \STATE $n \leftarrow$ \emph{timeseriesIDsList}.length
+    \FOR{$i=1$ to $n$}
+      \STATE \emph{timeseriesIDs} $\leftarrow$ \emph{timeseriesIDsList}.at($i$)
+      \STATE $m \leftarrow$ \emph{timeseriesIDs}.length
+      \FOR{$j=1$ to $m$}
+        \STATE $id \leftarrow$ \emph{timeseriesIDs}.at($j$)
+        \IF{\emph{id} 不在 \emph{dict} 中}
+          \STATE 在 \emph{dict} 中构建映射 \emph{id} $\rightarrow$ \emph{counter}
+          \STATE \emph{counter}$++$
+        \ENDIF
+      \ENDFOR
+    \ENDFOR
+
+    \RETURN \emph{dict}
+
   \end{algorithmic}
 \end{algorithm}
-\subsubsection{批量化写入内存表}
-在正式写入一个 FragmentInstance 之前，我们将这个 FragmentInstance 中的数据按照写入的内存表进行归类。在 IoTDB 中，一个 DataRegion 会为每一个时间分区维护两个内存表，一个写入顺序数据，一个写入乱序数据。因此，我们只要确定每行记录的时间分区范围以及其顺乱序，就可以确定它们要写到哪个内存表，然后将写入一个内存表的数据聚集到一起，一次性地写入到该内存表中。这样的设计有助于减少写入内存表过程中的固定开销，也有助于提高 CPU 缓存的命中率，进而提高写入性能。
-\section{写前日志压缩设计与实现\label{sec:chap7-sec4}}
-在 \ref{sec:chap3-sec3-1} 的实验中，我们对比了 \emph{insertRecords} 写入和 \emph{insertTablets} 写入所产生的 WAL 大小和数据文件大小的比值，其中 \emph{insertRecords} 的这一比值为 7:1，是 \emph{insertTablets} 的两倍还多。这也就意味着，在 IoTDB 使用 \emph{insertRecords} 进行写入时，有接近 90\% 的 I/O 资源都用于写前日志的写入，这无疑会影响写入性能。
 
-为了减少 WAL 的大小，节省系统的 I/O 资源，我们对写前日志进行了压缩。下面介绍 WAL 压缩的设计与实现。
-\subsection{写前日志压缩设计}
+得到字典以后，就需要根据字典对元数据进行编码，主要分为对设备 ID 的编码和时间序列 ID 的编码。对设备的编码比较简单，因为设备 ID 列表是一个单层的列表，所以在编码之前先记录设备 ID 列表的长度。在对每个设备 ID 编码时，先将其按层级拆分，然后记录其层级数，再记录其每个层级所对应的编码值。在对时间序列 ID 进行编码时，因为它是一个两层嵌套的列表，因此不仅要记录外层的长度，也要记录内层每个列表的长度，然后进行查表序列化即可。
+
+前面流程中所得到的字典也需要序列化为字节流，为了便于反序列化，我们将字典所对应的字节流放在了编码结果的前面。在将字典序列化为字节流时需要注意序列化的顺序，因为理论上我们需要记录每个单词所对应的编码值，但是我们为了节省这一部分开销，选择用单词在字典中的位置来代表它所对应的编码值。例如字典中出现的第一个单词就对应编码值 1，第二个单词对应 2，以此类推。算法 \ref{alg:schema-build-encoding} 描述了字典与编码的整个流程。
+
+\begin{algorithm}
+  \caption{元数据信息序列化构建编码结果的流程}
+  \label{alg:schema-build-encoding}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{deviceIds} 设备 ID 列表，\emph{timeseriesIDsList} 时间序列 ID 列表，\emph{dict} 编码字典
+
+    \STATE 构建一个空字节流 \emph{buffer}
+    \STATE 向 \emph{buffer} 中写入 \emph{dict} 的大小
+    \FOR{字典中的每一个单词 \emph{word}}
+      \STATE 向 \emph{buffer} 中写入 \emph{word} 的长度
+      \STATE 向 \emph{buffer} 中写入 \emph{word} 的每一个字母
+    \ENDFOR
+    
+    \STATE 向 \emph{buffer} 中写入 \emph{deviceIds} 的大小
+    \FOR{\emph{deviceIds} 中的每一个 \emph{deviceId}}
+      \STATE 将 \emph{deviceId} 按照 "." 切分成多个字符串，得到字符串数组 \emph{words}
+      \STATE 向 \emph{buffer} 中写入 \emph{words} 的大小
+      \FOR{\emph{words} 中的每一个 \emph{word}}
+        \STATE 从 \emph{dict} 中查找 \emph{word} 所对应的编码 $e$
+        \STATE 将 $e$ 写入到 \emph{buffer} 中
+      \ENDFOR
+    \ENDFOR
+
+    \STATE 向 \emph{buffer} 中写入 \emph{timeseriesIDsList} 的大小
+    \FOR{\emph{timeseriesIDsList} 中的每一个 \emph{timeseriesIDs}}
+      \STATE 向 \emph{buffer} 中写入 \emph{timeseriesIDs} 的大小
+      \FOR{\emph{timeseriesIDs} 中的每一个 \emph{timeseriesID}}
+      \STATE 从 \emph{dict} 中查找 \emph{timeseriesID} 所对应的编码 $e$
+      \STATE 向 \emph{buffer} 中写入 $e$
+      \ENDFOR
+    \ENDFOR
+
+    \RETURN \emph{buffer}
+
+
+  \end{algorithmic}
+\end{algorithm}
+
+\subsection{反序列化过程}
+反序列化是序列化的逆过程，算法 \ref{alg:schema-decoding} 描述了元数据信息反序列化的过程。反序列化时先读取字典编码的字典，每个单词所对应的编码值由它在字典中出现的顺序所决定，算法一边读取单词，一边构建一个从编码值到单词的映射表。
+
+将字典反序列化结束以后，就可以逐个读取设备 ID 的和时间序列 ID 的编码值，然后从编码值中恢复这些 ID。因为设备 ID 和时间序列 ID 分别以列表和嵌套列表的形式出现，因此解编码时也要根据字节流中所记录的列表长度信息对列表结构进行还原。
+
+
+\begin{algorithm}
+  \caption{元数据信息反序列化过程}
+  \label{alg:schema-decoding}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{buffer} 包含元数据信息的数据字节流
+    \STATE 从 \emph{buffer} 中读取字典的大小 $n$
+    \STATE 创建哈希表 \emph{dict}
+    \FOR{$i=1$ to $n$}
+      \STATE 从 \emph{buffer} 读取一个单词的长度 $m$
+      \STATE 从 \emph{buffer} 中读取 $m$ 个字符，并构建成一个新的单词 \emph{word}
+      \STATE 在 \emph{dict} 中添加映射： $i \rightarrow $ \emph{word}
+    \ENDFOR
+
+    \STATE 创建空列表 \emph{deviceIds}
+    \STATE 从 \emph{buffer} 中读取设备 ID 的个数 $n$
+    \FOR{$i=1$ to $n$}
+      \STATE 从 \emph{buffer} 中读取当前设备的层级数 $k$
+      \FOR{$j=1$ to $k$}
+        \STATE 从 \emph{buffer} 中读取编码值 $e$
+        \STATE 从 \emph{dict} 中根据 $e$ 查找到对应的单词
+      \ENDFOR
+      \STATE 将搜集到的单词拼装起来，使用 "." 连接，并加入到 \emph{deviceIds} 中
+    \ENDFOR
+
+    \STATE 创建空列表 \emph{timeseriesIdsList}
+    \STATE 从 \emph{buffer} 中读取时间序列列表的个数 $n$
+    \FOR{$i=1$ to $n$}
+      \STATE 从 \emph{buffer} 中读取当前时间序列列表的长度 $m$
+      \STATE 创建一个空列表 \emph{timeseriesIds}
+      \FOR{$j=1$ to $m$}
+        \STATE 从 \emph{buffer} 中读取编码值 $e$
+        \STATE 从 \emph{dict} 中读取对应的单词，并添加到 \emph{timeseriesIds} 中
+      \ENDFOR
+      \STATE 将 \emph{timeseriesIds} 添加到 \emph{timeseriesIdsList} 中
+    \ENDFOR
+
+    \RETURN \emph{deviceIds}, \emph{timeseriesIdsList}
+
+  \end{algorithmic}
+\end{algorithm}
+
+
+\section{数据部分序列化与反序列化方案设计}
+\subsection{序列化过程}
+对写入请求进行序列化的过程其实本质上是将一份数据转换成字节流，然后传递给下一个处理流程。这个本质与数据存储是类似的，只不过前者将数据交由网络进行传输，而数据存储则将序列化得到的字节流交由磁盘进行存储。因此，我们可以借鉴数据存储领域的一些设计思想。
+
+目前数据库数据存储主要有三种方案：行式存储（Row Storage）、列式存储（Columnar Store）和混合存储（Hybrid Store）。行式存储将一行数据一起保存，相邻的数据项来自不同的列，它们可能类型不同，或者类型相同但是数值的分布不同；列式存储则是将一列数据保存在一起，相邻的数据项不仅类型相同，它们的数值也遵循着共同的分布；混合存储则是将行式存储和列式存储的设计相结合，先将数据按行进行分割成多个块，然后在每个块中按照列的形式存储。行式存储的优势是同一行的数据被聚集在一起，可以方便地访问同一行中的多项数据；列式存储的优势是可以获得更好的压缩比，减少数据体积；混合存储则在一定程度上结合了两者的优势。
+
+同样的，在对写入请求进行序列化时，也可以选择行式存储、列式存储和混合存储。行式存储就是将每一条 Record 的数据一起序列化，列式存储将一条时间序列的数据单独序列化，而混合存储则是先将 Records 分成多批，在每一批内进行列式序列化。
+
+行式序列化的优点在于实现简单，这是因为序列化时一条数据的多个数据项只需要按照顺序逐个转换为字节并添加到字节流中即可，反序列化时也可以按照顺序读取字节流并逐个反序列化单个数据项。但是行式序列化将不同类型的数据全部混合到了一起，导致在压缩时没有办法根据数据的特点进行优化，只能使用通用的压缩算法（如 Snappy\cite{samulowitz2013snappy}、GZip\cite{deutsch1996gzip}、ZSTD\cite{collet2018zstandard} 等）对整体进行压缩，无法实现更加精细化、高效的压缩。
+
+普通的列式序列化将一条时间序列的全部数据都放到一起进行编码，这样数据不仅类型相同，而且都遵循类似的分布，压缩的效果更好。但是，在一个 \emph{insertRecords} 写入请求中，同一条时间序列的数据不会太多，如果只把一条时间序列的若干个数据点放到一起压缩，效果也不好。
+
+为了获取较好的压缩效果，本工作改进了普通列式序列化方案，设计了一种以数据类型为聚集单位的列式序列化方案。图 \ref{fig:value-encoding-general} 展示了数据部分序列化的整体设计，序列化的结果一共分为 3 个区域：时间戳区、数据区和数据类型区。其中，时间戳区只包含时间戳，其中的内容是一个 \emph{insertRecords} 请求中所有记录的时间戳，每个时间戳的大小都固定为 8 字节。数据区包含了具体的数值项，并且这些数值项根据它们的类型被聚集在一起，同一条记录或者不同记录中有相同类型的数据会位于相邻的位置，而同一条记录中类型不同的数据则可能位于较远的位置。除文本类型外，同一数据类型内每个数据项的长度都是相同的。最后一个区域是数据类型区，其包含了写入请求中每个数据项的类型，以及每一行记录的长度。
+
+这样设计的好处在于，我们可以根据每个区域的特点为它们选择合适的压缩算法，而不是只能使用通用的压缩算法进行粗暴的压缩。例如，对于时间戳区，在同一个写入请求中的时间戳通常在数值上都非常接近，因此我们可以选择 Gorilla\cite{pelkonen2015gorilla} 压缩算法对其进行压缩，因为 Gorilla 算法尤其适合用于那些数值波动范围较小的数据；对于 Bool 类型，由于只有 True 和 False 两种取值，我们可以将原本用一个字节表示的数据项变成 1 个 bit，节省了 8 倍的空间。
+
 \begin{figure}
   \centering
-  \includegraphics[width=0.7\linewidth]{WAL-structure.png}
-  \caption{IoTDB 写前日志结构\cite{朱海铭2023面向内存表的可动态配置预写日志框架}}
-  \label{fig:wal-compress-design}
+  \includegraphics[width= 0.9\linewidth]{value-encoding.png}
+  \caption{数据部分序列化设计}
+  \label{fig:value-encoding-general}
 \end{figure}
 
-图 \ref{fig:wal-compress-design} 展示了目前 IoTDB 写前日志系统的结构，多个内存表的写前日志会被写入到同一个 WAL Buffer 中，每个 WAL Buffer 有一个对应的阻塞队列，用于接收异步提交的 WAL 序列化需求。每个 WAL Buffer 都使用了两个内存里的 Buffer 对象来缓存 WAL 序列化后的数据，两个 Buffer 交替使用。当其中一个 Buffer 写满了以后，就会被提交到异步的落盘线程中进行持久化，另一个空 Buffer 则会被用来接收新的 WAL 序列化需求。
+算法 \ref{alg:value-encoding} 描述了对写入请求数据部分进行序列化的过程。首先是处理时间戳的部分，将时间戳逐一序列化到一个字节流中，然后使用 Gorilla 压缩算法压缩这个字节流。然后是处理数据的部分，首先将数据按照类型分类，放到多个不同类型的数据列表中，然后将这些数据列表分别进行压缩，最后将压缩后的结果序列化到一个字节流中。在压缩时，我们可以根据数据类型的不同选择合适的压缩算法，如对数值类型选择 Gorilla 算法，这是一种无损的、适用于数据变化幅度不大的压缩算法；对文本类型使用字典压缩算法；对布尔类型使用 Bitpacking 压缩算法\cite{hwang2023lossless}。最后是处理数据类型的部分，将每一行记录的长度和每个数据项的类型序列化到一个字节流中，并最后将这个字节流写入到输出字节流中，数据部分的序列化就完成了。
 
-对写前日志模块的改动容易牵涉到 IoTDB 中的多个子模块，例如 IoT-Consensus 多副本共识协议、IoTDB 流处理系统都依赖于写前日志中的内容进行数据同步和数据传输。如果按照写前日志项为单位进行压缩，有可能会导致上层应用也需要进行修改，工程量较大。因此，我们的设计需要尽量对上层的应用透明，但是在 I/O 时可以减少写前日志的体积。此外，一个写前日志项序列化出的内容有可能需要多个 WAL Buffer 分别持久化到磁盘上。例如，一个写入中带有 30 MB 的文本，而一个 WAL Buffer 的默认大小是 16 MB，此时该写入请求对应的写前日志就需要通过两个 WAL Buffer 才能完全持久化到磁盘上。在发生这种情况时，针对单一写入日志项的压缩也不易实现。综上，以一个写前日志项为单位的压缩并不是最好的选择，我们选择对整个 WAL Buffer 进行压缩。
+\begin{algorithm}
+  \caption{数据部分序列化过程}
+  \label{alg:value-encoding}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{timestamps} 时间戳列表，\emph{datatypesList} 数据类型列表，\emph{valuesList} 数据列表 
+    \STATE 创建一个空的字节流 \emph{outputBuffer} 和一个空的字节流 \emph{timeBuffer}
+    \STATE 向 \emph{outputBuffer} 中写入 \emph{timestamps} 的大小
+    \FOR{\emph{timestamps} 中的每一个 \emph{timestamp}}
+      \STATE 将 \emph{timestamp} 写入到 \emph{timeBuffer} 中
+    \ENDFOR
+    \STATE 对 \emph{timeBuffer} 使用 Gorilla 算法压缩，并将压缩后的结果写入到 \emph{outputBuffer} 中 
 
-对 WAL 的压缩分为两个主要部分：写部分和读部分。在写部分，我们选择在 WAL Buffer 持久化之前对它使用通用压缩算法进行压缩。在读时，需要读取写前日志的模块有存储引擎恢复模块、流处理模块、多副本共识模块等。这些模块对写前日志的读取模式都是先将一块写前日志读入内存，然后解析其中的内容，获取一个个的写前日志项后再继续处理其他上层逻辑。因此，我们在将一个 WAL Buffer 读入内存中时，先将其解压缩，然后将解压缩后的原始 Buffer 进行解析，获取一个个的写前日志项并交由上层应用使用。
-\subsection{写前日志压缩实现}
+    \STATE 创建六个数据列表，分别对应不同的数据类型：\emph{boolList}、\emph{intList}、\emph{longList}、\emph{floatList}、\emph{doubleList}、\emph{textList}
+    \STATE 创建一个空的字节流 \emph{typeBuffer}
+    \STATE 创建变量 $n = $\emph{datatypesList}.length
+    \STATE 将 $n$ 序列化到 \emph{typeBuffer} 中
+    \FOR{$i=1$ to $n$}
+      \STATE \emph{datatypes} $=$ \emph{datatypesList}.at($i$)
+      \STATE 创建变量 $m = $\emph{datatypes}.length
+      \STATE 将 $m$ 序列化到 \emph{typeBuffer} 中
+      \FOR{$j=1$ to $m$}
+        \STATE 根据 \emph{datatypes}.at($j$) 的类型，将 \emph{valuesList}.at($i$).at($j$) 放到对应的数据列表中
+        \STATE 将 \emph{datatypes}.at($j$) 的值序列化到 \emph{typeBuffer} 中
+      \ENDFOR
+    \ENDFOR
+    \STATE 将 \emph{boolList} 的大小序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{boolList} 中的数据按位表示序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{intList} 的大小序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{intList} 中的数据使用 Gorilla 压缩后序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{longList} 的大小序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{longList} 中的数据使用 Gorilla 压缩后序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{floatList} 的大小序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{floatList} 中的数据使用 Gorilla 压缩后序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{doubleList} 的大小序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{doubleList} 中的数据使用 Gorilla 压缩后序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{textList} 的大小序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{textList} 中的数据使用字典编码后序列化到 \emph{outputBuffer} 中
+    \STATE 将 \emph{typeBuffer} 写入到 \emph{outputBuffer} 中
+    \RETURN \emph{outputBuffer}
+
+  \end{algorithmic}
+\end{algorithm}
+\subsection{反序列化过程}
+\begin{algorithm}
+  \caption{数据部分反序列化过程}
+  \label{alg:value-decoding}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{buffer} 包含数据部分的字节流
+    \STATE 从 \emph{buffer} 中读取时间戳的个数 $n$
+    \STATE 创建一个空的时间戳列表 \emph{timestamps}
+    \STATE 创建 Gorilla 解压缩器 \emph{decompressor}
+    \FOR{$i=1$ to $n$}
+      \STATE 使用 \emph{decompressor} 从 \emph{buffer} 中读取一个时间戳 $t$
+      \STATE 将 $t$ 添加到 \emph{timestamps} 中
+    \ENDFOR
+    \STATE 从 \emph{buffer} 中反序列化出布尔类型的数据列表 \emph{boolList}
+    \STATE 从 \emph{buffer} 中反序列化出整数类型的数据列表 \emph{intList}
+    \STATE 从 \emph{buffer} 中反序列化出长整数类型的数据列表 \emph{longList}
+    \STATE 从 \emph{buffer} 中反序列化出浮点数类型的数据列表 \emph{floatList}
+    \STATE 从 \emph{buffer} 中反序列化出双精度浮点数类型的数据列表 \emph{doubleList}
+    \STATE 从 \emph{buffer} 中反序列化出文本类型的数据列表 \emph{textList}
+    \STATE 从 \emph{buffer} 中读取数据类型列表的个数 $n$
+    \STATE 创建一个空的数据类型列表 \emph{datatypesList}，一个空的数据列表 \emph{valuesList}
+    \FOR{$i=1$ to $n$}
+      \STATE 从 \emph{buffer} 中读取当前数据类型列表的长度 $m$
+      \STATE 创建一个空的数据类型列表 \emph{datatypes}
+      \STATE 创建一个空的数据列表 \emph{values}
+      \FOR{$j=1$ to $m$}
+        \STATE 从 \emph{buffer} 中读取数据类型 $t$
+        \STATE 将 $t$ 添加到 \emph{datatypes} 中
+        \STATE 根据 $t$ 从对应的数据列表中读取数据 $v$，并从该数据列表中移除掉该元素
+        \STATE 将 $v$ 添加到 \emph{values} 中
+    \ENDFOR
+    \ENDFOR
+    \RETURN \emph{timestamps}, \emph{datatypesList}, \emph{valuesList}
+  \end{algorithmic}
+\end{algorithm}
+
+算法 \ref{alg:value-decoding} 描述了数据部分反序列化的过程。反序列化时，首先读取时间戳的个数，然后逐一读取时间戳并添加到时间戳列表中。然后从字节流中读取布尔类型、整数类型、长整数类型、浮点数类型、双精度浮点数类型和文本类型的数据列表，并根据对应的压缩算法类型对它们进行解压缩，这些数据列表中的数据是按照序列化时的顺序排列的。最后读取数据类型列表的个数，然后逐一读取每个数据类型列表的长度，再逐一读取每个数据类型列表中的数据类型，每读取一个数据类型，就根据这个数据类型去对应的数据列表中读取最顶部的数据，然后将这个列表顶部的数据移除，并将这个数据添加到一个新的数据列表中。最后返回时间戳列表、数据类型列表和数据列表，反序列化过程就完成了。
+
+\section{写入请求辅助信息部分序列化与反序列化方案设计}
+\subsection{序列化流程}
 \begin{figure}
   \centering
-  \includegraphics[width=0.7\linewidth]{压缩后WAL的结构.pdf}
-  \caption{压缩后的写前日志结构}
-  \label{fig:compressed-wal-structure}
+  \includegraphics[width=0.75\linewidth]{auxiliary-buffer-design.png}
+  \caption{辅助信息部分序列化设计}
+  \label{fig:aux-encoding-general}
 \end{figure}
-图 \ref{fig:compressed-wal-structure} 展示了压缩后的写前日志结构，我们把这样一个结构称为一个 WAL Segment。在写入时，我们接收到完整的原始 WAL Buffer，然后使用通用压缩算法压缩并记录其原始数据的长度，并且在头部使用一个标记位表示该数据是否被压缩过。之所以需要用标志位，是因为我们把写前日志压缩实现为一个可选的功能。当用户资源不足时，可以不启用写前日志压缩。使用标志位可以保证读取时的兼容性，保证对于压缩和未压缩的写前日志都可以正确解析。
 
-实现压缩的一个关键点是选择合适的压缩算法，IoTDB 目前支持 ZSTD、LZ4、Snappy、LZMA、GZip 等压缩算法。不同压缩算法的压缩率、压缩速度、资源开销各不相同，压缩率越高的往往压缩速度越慢、资源开销越大，反之亦然。经过实验，我们发现 GZip 压缩算法可以取得较好的压缩率和压缩速度，因此我们选择了 GZip 作为 IoTDB 写前日志的压缩算法，具体的实验内容将在第 \ref{sec:chap8} 章中介绍。
+辅助信息主要包含一些零散的字段，这些字段的数据类型可能不同，因此在序列化时需要对每个字段进行单独的处理。图 \ref{fig:aux-encoding-general} 展示了辅助信息部分序列化的整体设计。辅助信息部分序列化的结果分为一个个单独的字段项，每个字段项中包含了该字段的名称、该字段的类型以及该字段的值。
 
-在读取时，我们一次读入一个 WAL Segment，然后根据标志位判断是否需要解压缩。如果需要解压缩，就申请一块与原始数据大小相同的内存，然后将压缩后的数据解压缩到这一块内存中，再交由上层应用进行解析。如果不需解压缩，则直接解析 WAL 的数据。这样的设计可以保证对于压缩和未压缩的写前日志都可以正确解析，保证了系统的兼容性。
+\begin{algorithm}
+  \caption{辅助信息序列化过程}
+  \label{alg:aux-encoding}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{auxiliaryInfo} 辅助信息哈希表，表示从字段名到字段值的映射
+    \STATE 创建一个空的字节流 \emph{outputBuffer}
+    \STATE 创建变量 $n = $\emph{auxiliaryInfo}.size
+    \STATE 将 $n$ 序列化到 \emph{outputBuffer} 中
+    \FOR{哈希表中的每一个键值对 (\emph{name}, \emph{value})}
+      \STATE 将 \emph{name} 序列化到 \emph{outputBuffer} 中
+      \STATE 将 \emph{value} 的类型序列化到 \emph{outputBuffer} 中
+      \STATE 根据 \emph{value} 的类型将 \emph{value} 序列化到 \emph{outputBuffer} 中
+    \ENDFOR
+    \RETURN \emph{outputBuffer}
+  \end{algorithmic}
+\end{algorithm}
+
+算法 \ref{alg:aux-encoding} 展示了辅助信息序列化的过程。算法的输入是一个哈希表，其中包含了从辅助字段名到字段内容的映射。首先，程序将该哈希表的大小序列化到字节流中，然后遍历哈希表中的每一个键值对，将键值对的键（字段名）、字段类型以及值（字段内容）分别序列化到字节流中，最后输出序列化得到的字节流。
+
+\subsection{反序列化流程}
+\begin{algorithm}
+  \caption{辅助信息反序列化过程}
+  \label{alg:aux-decoding}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{buffer} 包含辅助信息的字节流
+    \STATE 从 \emph{buffer} 中读取哈希表的大小 $n$
+    \STATE 创建一个空的哈希表 \emph{auxiliaryInfo}
+    \FOR{$i=1$ to $n$}
+      \STATE 从 \emph{buffer} 中读取字段名 \emph{name}
+      \STATE 从 \emph{buffer} 中读取字段类型 \emph{type}
+      \STATE 根据 \emph{type} 从 \emph{buffer} 中读取字段值 \emph{value}
+      \STATE 将 (\emph{name}, \emph{value}) 添加到 \emph{auxiliaryInfo} 中
+    \ENDFOR
+    \RETURN \emph{auxiliaryInfo}
+  \end{algorithmic}
+\end{algorithm}
+
+算法 \ref{alg:aux-decoding} 展示了辅助信息反序列化的过程。算法的输入是一个字节流，其中包含了序列化得到的辅助信息。首先，程序从字节流中读取哈希表的大小，然后创建一个空的哈希表。接着，程序遍历字节流中的每一个字段项，从中读取字段名、字段类型和字段值，并将这些信息添加到哈希表中。最后，程序返回反序列化得到的哈希表。上层程序可以使用字段名从该哈希表中检索该字段所对应的数据。如果需要增加新的辅助字段，那么只需要在哈希表中添加新的键值对即可，具有良好的扩展性，满足了设计需求。
+
+\section{新 \emph{insertRecords} 写入请求序列化与反序列化实现}
+本工作对上述的设计进行了实现，因为 IoTDB 使用 Apache Thrift 进行远程服务调用，因此本工作的实现也仍然没有脱离 Thrift 的框架，但将字段与内容的序列化和反序列化过程自行实现，序列化后的内容通过 Thrift 进行传输。新的 \emph{insertRecords} 写入接口在 Thrift IDL 中定义如下：
+\begin{lstlisting}[language=idl,frame = trBL , escapeinside={(*@}{@*)}]
+struct TSInsertRecordsReq {
+  1: required binary schemaBuffer,
+  2: required binary valueBuffer,
+  3: required binary auxiliaryBuffer
+}
+  
+TSStatus insertRecords(1:TSInsertRecordsReq req);
+\end{lstlisting}
+TSInsertRecordsReq 结构体中的 schemaBuffer、valueBuffer、auxiliaryBuffer 分别对应了元数据信息、数据部分和辅助信息的序列化结果，这三个字节流数据的序列化和反序列化过程由我们自行实现。
+
+除了前文中描述的序列化与反序列化算法，为了减小数据包的体积，我们还对由上述算法产生的字节流分别进行了压缩。压缩被实现为可选的，在字节流中通过一个标志位来表示是否进行了压缩，图 \ref{fig:compress-rpc-buffers} 展示了经过加上压缩之后 RPC 字节流的结构。当字节流被压缩过，最前面的标志位会被置为 1，并且原始数据包的长度也被记录在字节流中；如果字节流没有被压缩过，那么标志位为 0，并且紧随其后的就是原始的字节流如果字节流被压缩过，那么在反序列化之前需要先对数据进行解压缩；反之，程序可以直接对字节流进行反序列化。
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{compress-rpc-buffers.pdf}
+  \caption{压缩后的 RPC 字节流结构}
+  \label{fig:compress-rpc-buffers}
+\end{figure}
+
+最后，在实现时，结合 Java 语言的特性，为了提高序列化和反序列化的性能，我们使用了 DirectByteBuffer 来进行字节流的读写操作，这样可以避免数据在内存中的拷贝，也可以减轻系统垃圾回收的频率，提高了序列化和反序列化的效率。
+
 \section{本章小结}
-本章介绍了在存储引擎侧针对 \emph{insertRecords} 写入请求处理进行的若干优化设计，包括多线程并行写入、批量化写入和写前日志压缩。多线程并行写入通过将写入本地 DataRegion 和写入远程 DataRegion 的过程都设计为多线程并行执行，以提高写入性能。批量化写入通过将写前日志、更新监控信息、维护内存索引等操作批量化，减少这些操作对写入性能的影响。写前日志压缩通过对 WAL Buffer 进行压缩，减少写前日志对磁盘的写入量，提高写入性能。
+本章首先介绍了 \emph{insertRecords} 写入请求序列化的设计目标，然后分别介绍了对写入请求中元数据部分、数据部分以及辅助信息部分的序列化与反序列设计。元数据部分的序列化利用了设备 ID 与时间序列 ID 都是重复性高的文本的特点，利用字典编码减少序列化后数据的体积；数据部分的序列化使用了以数据类型为聚集单位的列式存储设计，根据数据类型的不同选择合适的压缩算法，提高了压缩效果；辅助信息部分的序列化则是将每个字段的名称、类型和值分别序列化到字节流中，具有良好的扩展性。最后，本章介绍了在对写入请求序列化与反序列化实现时的一些细节。
