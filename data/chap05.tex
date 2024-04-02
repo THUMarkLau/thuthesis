@@ -141,6 +141,9 @@ IoTDB 中对一行数据进行内存管理时，会计算两类内存占用：�
   \end{algorithmic}
 \end{algorithm}
 
+\section{客户端请求格式转换}
+从 \ref{sec:chap3-sec3-1} 节的实验中，我们发现了当一个写入请求中，一个设备有多行数据时，\emph{insertRecords} 的写入性能不如 \emph{insertTablets} 的写入性能。从系统的设计与实现出发分析这一现象的原因，是因为 \emph{insertTablets} 接口将一个设备的数据都集中在了一起，而 \emph{insertRecords} 将同一个设备的数据分散在了不同的行中，并且这些行记录了一些重复的信息。\emph{insertTablets} 把一个设备所有请求数据都集中在了一起，并且
+
 \section{客户端数据预处理实现}
 前文中已经介绍了在客户端进行写入语义校验、时间序列 ID 校验和内存开销预计算的设计与算法，本节中将介绍在客户端侧对这些流程的实现。IoTDB 目前有 Java、C++、Python、Rust 等客户端，其中被使用最广泛的是 Java 语言客户端，因此本文中对客户端的改进工作都基于 Java 语言客户端进行。
 
