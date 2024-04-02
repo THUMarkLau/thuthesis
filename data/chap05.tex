@@ -35,6 +35,48 @@
   \end{algorithmic}
 \end{algorithm}
 
+\section{客户端请求格式转换}
+从 \ref{sec:chap3-sec3-1} 节的实验中，我们发现了当一个写入请求中，一个设备有多行数据时，\emph{insertRecords} 的写入性能不如 \emph{insertTablets} 的写入性能。从系统的设计与实现出发分析这一现象的原因，是因为 \emph{insertTablets} 接口将一个设备的数据都集中在了一起，而 \emph{insertRecords} 将同一个设备的数据分散在了不同的行中，并且这些行记录了一些重复的信息。\emph{insertTablets} 把一个设备所有请求数据都集中在了一起，并且在数据传输、元数据处理、内存表写入等诸多流程上都是批量化进行的。
+提高 \emph{insertRecords} 写入性能的重要方法之一就是将同一个设备的相同数据集中，并在写入流程上进行批量化的处理。因此，一种将用户通过 \emph{insertRecords} 接口传入的数据进行批量化执行的方式就是在客户端处将 \emph{insertRecords} 请求的内容转换为 \emph{insertTablets} 写入请求，再发送到服务器进行执行。这样只需要修改客户端处的代码，就可以利用现有 IoTDB 内为 \emph{insertTablets} 写入所实现的批量化执行机制，同时仍然为用户提供 \emph{insertRecords} 写入接口的易用性。
+
+\begin{algorithm}
+  \caption{客户端请求格式转换}
+  \label{alg:client-req-convert}
+  \small
+  \begin{algorithmic}
+    \REQUIRE \emph{deviceIds, timestamps, timeseriesIdsList, datatypesList, valuesList}
+    \STATE 构建一个从设备 ID 到时间序列元数据列表的映射 \emph{SchemaMap}
+    \STATE $n = $ deviceIds.length
+    \FOR{$i=0$ to $n$}
+      \STATE \emph{device} =  \emph{deviceIds}.at($i$)
+      \STATE \emph{datatypes} = \emph{datatypesList}.at($i$)
+      \STATE \emph{measurementIds} = \emph{timeseriesIdsList}.at($i$)
+      \FOR{$j=0$ to \emph{datatypes}.length}
+        \STATE \emph{measurementId} = \emph{measurementIds}.at($j$)
+        \IF{\emph{measurementId} not in SchemaMap[\emph{device}]}
+          \STATE \emph{SchemaMap}[\emph{device}].add(\emph{measurementId}, \emph{datatypes}.at($j$))
+        \ENDIF
+      \ENDFOR
+    \ENDFOR
+
+    \STATE 构建一个从设备 ID 到 Tablet 的映射 \emph{TabletMap}
+    \FOR{$i=0$ to $n$}
+      \STATE \emph{device} =  \emph{deviceIds}.at($i$)
+      \STATE \emph{timestamps} = \emph{timestamps}.at($i$)
+      \STATE \emph{datatypes} = \emph{datatypesList}.at($i$)
+      \STATE \emph{values} = \emph{valuesList}.at($i$)
+      \STATE \emph{measurementIds} = \emph{timeseriesIdsList}.at($i$)
+      \IF{TabelMap[\emph{device}] is null}
+        \STATE TabletMap[\emph{device}] = new Tablet()
+      \ENDIF 
+      \STATE TabletMap[\emph{device}].addRow(\emph{timestamps}, \emph{measurementIds}, \emph{datatypes}, \emph{values})
+    \ENDFOR
+    \RETURN \emph{TabletMap}
+  \end{algorithmic}
+\end{algorithm}
+
+算法 \ref{alg:client-req-convert} 描述了将用户通过  \emph{insertRecords} 接口传入的写入参数转换为 \emph{insertTablets} 请求的过程。\emph{insertTablets} 写入需要程序将数据按设备封装成 Tablet 的形式，Tablet 的构建则需要指明该设备所有时间序列的元数据。因此，请求格式转换的第一个循环遍历每一行数据，收集每一个设备下的元数据。元数据信息收集完成以后，第二个循环再次遍历每一行数据，并把这些数据放到对应设备的 Tablet 中，最后将数据封装为一个从设备 ID 到 Tablet 的映射，并返回到客户端中，执行 \emph{insertTablets} 写入。
+
 \section{时间序列 ID 校验设计}
 IoTDB 中对时间序列 ID 的形式有一定的规定，参考最新的官方文档\footnote{https://iotdb.apache.org/zh/UserGuide/latest/Basic-Concept/Data-Model-and-Terminology.html}，其中对时间序列 ID 的约束如下：
 \begin{itemize}
@@ -141,21 +183,25 @@ IoTDB 中对一行数据进行内存管理时，会计算两类内存占用：�
   \end{algorithmic}
 \end{algorithm}
 
-\section{客户端请求格式转换}
-从 \ref{sec:chap3-sec3-1} 节的实验中，我们发现了当一个写入请求中，一个设备有多行数据时，\emph{insertRecords} 的写入性能不如 \emph{insertTablets} 的写入性能。从系统的设计与实现出发分析这一现象的原因，是因为 \emph{insertTablets} 接口将一个设备的数据都集中在了一起，而 \emph{insertRecords} 将同一个设备的数据分散在了不同的行中，并且这些行记录了一些重复的信息。\emph{insertTablets} 把一个设备所有请求数据都集中在了一起，并且
-
 \section{客户端数据预处理实现}
-前文中已经介绍了在客户端进行写入语义校验、时间序列 ID 校验和内存开销预计算的设计与算法，本节中将介绍在客户端侧对这些流程的实现。IoTDB 目前有 Java、C++、Python、Rust 等客户端，其中被使用最广泛的是 Java 语言客户端，因此本文中对客户端的改进工作都基于 Java 语言客户端进行。
+前文中已经介绍了在客户端进行写入语义校验、请求格式转换、时间序列 ID 校验和内存开销预计算的设计与算法，本节中将介绍在客户端侧对这些流程的实现。IoTDB 目前有 Java、C++、Python、Rust 等客户端，其中被使用最广泛的是 Java 语言客户端，因此本文中对客户端的改进工作都基于 Java 语言客户端进行。
 
 对写入数据的语义合法性校验是客户端处理所有数据的第一步，因为对具有非法语义的数据进行任何处理都是没有意义的。本步骤较为简单，本质上就是对比多个 List 结构体的长度是否一致，在实现时通过两个嵌套的 for 循环就可以完成，本文不再赘述。
 
+对于语义上合法的数据，则会判断是否需要转换为 \emph{insertTablets} 请求。判断的标准是计算转换因子是否超过了阈值，如果超过阈值则转换为 \emph{insertTablets} 接口进行写入，否则仍然按照 \emph{insertRecords} 逻辑进行后续的流程。转换因子的计算公式为：
+
+$$\text{转换因子} = \frac{\text{不重复的设备数量}}{\text{写入传入的总设备数量}}$$
+
+这个转换系数代表了一组写入数据的设备的独特程度，例如写入 100 行数据，转换因子为 0.01，就代表这 100 行数据都是一个设备的数据，非常适合转换为 Tablet 进行写入。这个转换因子的倒数就是每一个设备的平均行数，因此这个数值越小，代表每个设备平均写入的行数就越多，越适合转换为 Tablet 进行写入。当这个转换因子小于一个阈值时，就会转换为 \emph{insertTablets} 请求进行写入。
+
 \begin{figure}
   \centering
-  \includegraphics[width=0.7\linewidth]{lru-ts-id-validate.png}
+  \includegraphics[width=0.6\linewidth]{lru-ts-id-validate.png}
   \caption{带有 LRU 缓存的时间序列 ID 检验过程}
   \label{fig:lru-ts-id-validate}
 \end{figure}
 
+不满足转换为 \emph{insertTablets} 的写入请求，就会继续进行时间序列 ID 校验及后续步骤。
 在算法 \ref{alg:validate-ts-id} 描述的对时间序列 ID 校验的过程中，对传入的每一个时间序列 ID 都要进行一次检查。这样的实现并不是最高效的，因为通过 \emph{insertRecords} 接口传入的数据中，可能存在一个设备下的多行数据，不同行数据之间包含相同的时间序列 ID；即使是不同设备之间的时间序列 ID 也可能存在相同的情况。例如在车联网场景下有几万个设备，但是每个设备几乎都包含相同的时间序列 ID，因为这些 ID 对应的是车辆上同一种型号的传感器。 如图 \ref{fig:lru-ts-id-validate} 所示，为了充分利用序列 ID 的这一特点，在实现时笔者加入了一个哈希表结构作为缓存，将一个时间序列 ID 映射到一个字符串，这个字符串代表经过脱反引号处理后得到的时间序列 ID。在对每一个序列 ID 检查前，都先检查这个哈希表中是否已经缓存了该时间序列 ID 的校验结果，如果有则可以跳过检查，如果没有则进行检查，并将检查得到的脱引号后的结果保存在该哈希表中。为了避免一次写入请求中包含的不同的时间序列 ID 数量过多，缓存哈希表中的项数过多导致客户端内存不足，该哈希表通过最近最少使用策略（Least Recently Used，LRU）策略管理缓存项，当缓存项的数目超过一定阈值，就会及时清除那些最近未被使用的项，以节约内存空间。
 
 \begin{figure}
