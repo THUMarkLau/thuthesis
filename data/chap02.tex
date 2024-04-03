@@ -1,7 +1,7 @@
 % !TeX root = ../thuthesis-example.tex
 
 \chapter{相关研究综述}
-本节首先介绍目前主流时序数据库的写入接口设计，然后介绍主流时序数据库存储引擎的设计，最后介绍与数据库客户端以及 RPC 优化有关的工作。
+本节首先介绍目前主流时序数据库的写入接口设计，然后介绍与数据库客户端以及 RPC 优化有关的工作。
 \section{时序数据库数据写入接口概述}
 在目前市面上流行的时序数据库有四种常见的数据写入方式：SQL 写入、原生接口写入、行协议写入以及通过数据通信协议写入。下面将分别介绍这四种写入方式的特点。
 \subsection{SQL 写入}
@@ -61,26 +61,6 @@ RESTful API 的全称是 Representational State Transfer API，指的是一种�
 使用这样的数据写入方式也存在着一些弊端。首先，这些通讯方式本身并不是为了高性能场景而设计的，因此在性能上可能不如原生接口写入和行协议写入。其次，因为这些协议是为了通用场景而开发的，通过这些协议进行写入时存在的性能优化空间也比较小。因此，大部分使用这些协议的场景都是在数据量较小、写入频率较低的场景下。
 
 
-
-\section{时序数据库存储引擎设计}
-存储引擎是时序数据库的重要部件之一，好的存储引擎可以极大地提升数据库写入和查询的性能。本节将介绍主流时序数据库的存储引擎设计，包括 TDEngine、InfluxDB、Apache HoraeDB 。
-\subsection{TDEngine 存储引擎设计}
-TDEngine 是一个分布式数据库，集群中的节点根据角色可以分成 dnode、qnode、mnode 和 snode，其中 dnode 是数据节点，也是存储引擎所在的节点。图 \ref{fig:tdengine-write-process} 展示了 TDEngine 的存储引擎架构图。
-\begin{figure}
-  \centering
-  \includegraphics[width=\textwidth]{tdengine-write-process.png}
-  \caption{TDEngine 存储引擎架构图\cite{tdengine2019arch}}
-  \label{fig:tdengine-write-process}
-\end{figure}
-
-TDEngine 的存储引擎整体上使用了类似日志合并树（Log-Structured Merged Tree，LSM Tree）\cite{o1996log}的架构，客户端写入的数据会先被缓存在内存里的内存表（MemTable）中，等待内存表中的数据积攒到了一定规模以后再批量化地持久化到磁盘上。为了防止内存中缓存的数据丢失，在向客户端返回写入成功的消息之前，在磁盘上记录写前日志（Write Ahead Logging, WAL）\cite{mohan1992aries}。由于写前日志是 I/O 模式是追加的顺序写，因此仍然可以保持一个较好的性能。
-
-TDEngine 在单个数据节点中有多个 vnode，每个 vnode 都有一个内存表。TDEngine 为每个时间序列都分配了一个时间序列 ID，内存表为它所管理的每条时间序列都维护了一个数据槽用以缓存这个序列的数据，这两者的映射关系通过对时间序列 ID 的哈希和开放寻址法（Open Addressing）来维护。每个时间序列的数据槽被实现为一个跳表（SkipList）\cite{pugh1990skip}，这是一种概率性数据结构，它通过在有序的链表上增加多级索引来提高搜索效率。对于数据的写入和删除，跳表都可以提供平均 $O(\log n)$ 的时间复杂度。TDEngine 实现的跳表中，每个节点保存了一行记录，即一张设备表下多条时间序列在同一个时间戳下的数据。跳表节点之间的顺序由时间戳和版本号共同决定。
-
-由于每个跳表节点中都包含了一行数据，因此行式写入成为了最自然的一种数据写入方式。不过，TDEngine 也支持了列式的写入，但是在数据插入内存表之前，会先将列式的数据转换为行式，然后写入跳表中，理论上效率并不如行式写入。
-\subsection{InfluxDB 存储引擎设计}
-\subsection{Apache HoraeDB 存储引擎设计}
-\subsection{Apache IoTDB 存储引擎设计}
 \section{数据库客户端与数据序列化优化\label{sec:chap2-sec3}}
 基于客户端-服务器（Client-Server，CS）架构的数据库几乎都实现了一套自己的客户端协议，其承担着向服务器发送查询/写入请求，接收服务器查询/写入结果的作用，其性能是决定数据库整体性能的关键一环。常见的客户端协议实现有对 JDBC\cite{zukowski2006jdbc} 和 ODBC\cite{geiger1995inside} 接口的实现。为了保持对已有数据库的兼容性，一些数据库系统选择复用现有的数据库客户端协议，例如 RedShift\cite{gupta2015amazon}、Greenplum\cite{lyu2021greenplum}、Vertica\cite{lamb2012vertica}、Hyper\cite{neumann2011efficiently} 都选择实现了 PostgreSQL 的客户端协议，Spark SQL\cite{armbrust2015spark} 选择实现了 Hive 的客户端协议。总之，目前市面上存在着许多不同的客户端协议。
 
