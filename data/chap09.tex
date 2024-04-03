@@ -1,3 +1,17 @@
 % !TeX root = ../thuthesis-example.tex
 
 \chapter{总结与展望}
+\section{本文总结}
+本文首先说明了优化 Apache IoTDB 的 \emph{InsertRecords} 写入机制性能的必要性与现实意义，并介绍了现有 IoTDB \emph{InsertRecords} 写入机制的完整执行流程。然后本文使用 IoT Benchmark 对 IoTDB 的 \emph{InsertRecords} 和 \emph{InsertTablets} 写入方式进行对比测试，并使用性能分析工具对执行两种不同写入方式时 IoTDB 的运行状况进行了分析，发现了 \emph{InsertRecords} 写入方式的性能瓶颈。基于这些瓶颈，本文重新设计了 \emph{InsertRecords} 写入机制，从客户端、RPC 层和存储引擎层进行了优化。最后，本文使用 IoT Benchmark 和用户场景的模拟负载对优化后的 \emph{InsertRecords} 写入机制的性能进行了验证。本文的主要贡献如下：
+\begin{enumerate}
+  \item 本工作完整地分析了现有 IoTDB \emph{InsertRecords} 写入机制的执行流程，并在压力测试场景下使用性能分析工具量化了各个环节的开销，确定了已有 \emph{InsertRecords} 写入机制的瓶颈所在，然后从设计和实现的角度分析了导致瓶颈出现的原因。
+  \item 本工作从客户端、RPC 层、存储引擎三个方面优化了 IoTDB 的 \emph{InsertRecords} 写入机制，包括客户端请求格式转换、数据预处理、写入请求列式序列化、存储引擎批量化执行、写前日志压缩等，解决了原有 \emph{InsertRecords} 写入机制的瓶颈，从而提高了写入性能。
+  \item 本工作使用压力测试工具，对各个优化措施所带来的性能提升进行了测试，验证了优化措施的有效性。为了贴近用户的真实场景，本工作设计并实现了一套用户负载采样以及模拟运行程序，通过对若干用户的真实负载进行采样，生成了一系列模拟负载，然后使用这些模拟负载对优化前后的 IoTDB 的 \emph{InsertRecords} 写入机制进行了测试。实验结果表明，本工作的优化让 IoTDB 的 \emph{InsertRecords} 写入机制在性能提升的同时节约了系统资源。
+\end{enumerate}
+\section{本文不足与展望}
+本文设计的新 \emph{InsertRecords} 写入机制虽然解决了过去的一些性能瓶颈，但仍然存在可以优化的地方，包括：
+\begin{enumerate}
+  \item 在海量序列场景下，\emph{InsertRecords} 写入机制的瓶颈主要在于元数据校验，因为在这种场景下，元数据缓存的命中率较低，每次元数据校验都可能需要从远端拉取信息，导致写入性能下降。因此，如何在这种场景下优化元数据校验是未来的研究方向。
+  \item 目前 IoTDB 每个 DataRegion 的写入仍然是串行的，这是为了保证共识协议的一致性而设计的。目前工业界有一些工作提出了一些并行化的共识协议，如 PolarFS 所使用的 ParallelRaft\cite{cao2018polarfs}。未来 IoTDB 可以进一步研究如何在保证一致性的情况下解除对单个 DataRegion 的写入串行化限制，提高写入性能。
+  \item I/O 瓶颈仍然是在时序数据库写入场景下制约 IoTDB 写入性能的主要因素之一，如何通过优化 I/O 资源来提高系统的写入性能仍然需要大量的工作，例如更高效的 I/O 调度、异步 I/O、I/O 合并等。
+\end{enumerate}
