@@ -1,6 +1,6 @@
 % !TeX root = ../thuthesis-example.tex
 
-\chapter{\emph{insertRecords} 写入请求序列化设计与实现\label{sec:chap6}}
+\chapter{\emph{insertRecords} 写入请求列式序列化设计与实现\label{sec:chap6}}
 第 \ref{chap:client-design} 章介绍了客户端对数据的预处理工作，在客户端的预处理结束后，写入请求需要通过 RPC 层序列化为字节流，传输到服务器侧，再反序列化为写入请求被 IoTDB 服务器处理。本章将介绍在新 \emph{insertRecords} 写入机制中，在 RPC 层序列化写入请求时的数据包结构设计与实现。
 
 \section{写入请求序列化的设计目标}
