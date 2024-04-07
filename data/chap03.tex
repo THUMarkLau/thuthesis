@@ -82,7 +82,7 @@ public class Tablet {
     \midrule
     deviceId & String & 该 Tablet 所属的设备 ID \\
     schemas & List<MeasurementSchema> & 该 Tablet 中每个测点的元数据信息 \\
-    timestmaps & long 类型数组 & 该 Tablet 中每一行数据的时间戳 \\
+    timestamps & long 类型数组 & 该 Tablet 中每一行数据的时间戳 \\
     values & Object 类型数组 & 该 Tablet 中每一个测点的数据，其中的每一个对象都代表一列数据 \\
     rowSize & int & 该 Tablet 中包含的数据行数\\
     \bottomrule
@@ -155,7 +155,7 @@ Apache IoTDB 使用了 Apache Thrift\cite{apache2024thrift} 作为 RPC 层。Apa
 
 Thrift 的工作原理基于定义一个服务的接口描述语言（Interface Description Language, IDL）。开发者首先需要用 Thrift IDL 来定义数据类型和服务接口。然后，Thrift 编译器会自动为当前所使用的编程语言生成相应的代码，包括数据类型的定义、服务接口的框架以及序列化/反序列化的机制。下面分别介绍客户端侧与服务器侧 Thrift 传输和接收数据的过程。
 \subsubsection{客户端侧序列化与传输数据流程\label{sec:chap3-sec2-2-1}}
-下面以 Apache IoTDB 目前对 Thrift 的配置为例，介绍 Thrfit 传输客户端将预处理好的 \emph{insertRecords} 数据的过程。
+下面以 Apache IoTDB 目前对 Thrift 的配置为例，介绍 Thrift 传输客户端将预处理好的 \emph{insertRecords} 数据的过程。
 
 IoTDB 在 Thrift 中对 \emph{insertRecords} 接口的定义如下：
 \begin{lstlisting}[language=idl,frame = trBL , firstnumber = last , escapeinside={(*@}{@*)}]

@@ -166,7 +166,7 @@
   \label{tabular:columnar-serialization-performance}
 \end{table}
 
-表 \ref{tabular:columnar-serialization-performance} 展示了加上列式写入请求序列化的结果，吞吐提升了 34.9\%，平均延迟下降了 18.9\%。但是，由于写入请求序列化会带来编码和解编码的开销，容易让 JVM 发生更频繁的垃圾回收，所以代表极端情况的 P99 延迟反而上升了 82.2\%。在吞吐提升 34.9\% 的情况下，CPU 消耗量上升了 18.4\%，磁盘利用率上升了 23.2\%，磁盘吞吐上升了 21.8\%。网络带宽显著下降了 96.9\%，仅为原有带宽占用的 3.1\%，这表明网络带宽已经不再是写入性能的瓶颈。
+表 \ref{tabular:columnar-serialization-performance} 展示了加上列式写入请求序列化的结果，吞吐提升了 34.9\%，平均延迟下降了 18.9\%。但是，由于写入请求序列化会带来编码和解编码的开销，容易让 JVM 发生更频繁的垃圾回收，所以代表极端情况的 P99 延迟反而上升了 82.2\%。在吞吐提升 34.9\% 的情况下，CPU 消耗量上升了 18.4\%，磁盘利用率上升了 23.2\%，磁盘吞吐上升了 21.8\%。网络带宽占用显著下降了 96.9\%，降为原有的 3.1\%，远低于测试环境的网络理论带宽，这表明网络带宽已经不再是写入性能的瓶颈。
 
 \begin{table}
   \centering
@@ -187,7 +187,7 @@
   \label{tabular:fi-parallel-insert-performance}
 \end{table}
 
-表 \ref{tabular:fi-parallel-insert-performance} 展示了增加 Fragment Instance 并行插入对性能的影响。从实验结果中可以看出，F ragment Instance 并行插入以后对吞吐的影响并不显著，只增加了 $4\%$，但对延迟的降低非常显著，达到了 $47\%$。这是因为多个 Fragment Instance 可以同时写入到内存表中，使得每个 DataRegion 几乎都连续不断地在写入数据，相比于串行写入减少了写入主线程的等待时间，因此降低了延迟。但是加入 Fragment Instance 并行写入之后服务器 CPU 利用率提升的比例高于吞吐提升的比例，这意味着 CPU 写入每个数据点的开销增加了。这个现象是合理的，因为加入 Fragment Instance 并行写入以后在写入过程中引入了更多线程切换和同步的开销，导致了资源利用率的下降。但总的来说，在降低延迟方面，Fragment Instance 并行写入有着明显的效果。
+表 \ref{tabular:fi-parallel-insert-performance} 展示了增加 Fragment Instance 并行插入对性能的影响。从实验结果中可以看出，Fragment Instance 并行插入以后对吞吐的影响并不显著，只增加了 $4\%$，但对延迟的降低非常显著，达到了 $47\%$。这是因为多个 Fragment Instance 可以同时写入到内存表中，使得每个 DataRegion 几乎都连续不断地在写入数据，相比于串行写入减少了写入主线程的等待时间，因此降低了延迟。但是加入 Fragment Instance 并行写入之后服务器 CPU 利用率提升的比例高于吞吐提升的比例，这意味着 CPU 写入每个数据点的开销增加了。这个现象是合理的，因为加入 Fragment Instance 并行写入以后在写入过程中引入了更多线程切换和同步的开销，导致了资源利用率的下降。但总的来说，在降低延迟方面，Fragment Instance 并行写入有着明显的效果。
 
 最后，表 \ref{tabular:columnar-serialization-performance-vs-origin} 展示了以上三种优化措施综合起来相较于未优化之前在表 \ref{tabular:test-req-format-iot-benchmark-config-2} 负载下带来的性能提升，吞吐提升了 116\%，平均延迟下降了 73\%，P99 延迟下降了 44\%，服务器 CPU 消耗提升了 65\%，服务器磁盘利用率下降了 11\%，磁盘吞吐量减少了 28\%，网络带宽的消耗减少了 95\%。这表明通过对存储引擎和写入请求序列化的优化，IoTDB 的写入性能得到了显著提升，同时也减少了对服务器资源的消耗。
 

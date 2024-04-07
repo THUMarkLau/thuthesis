@@ -5,7 +5,7 @@
 
 
 \section{服务器端 \emph{insertRecords} 写入流程总览}
-\ref{sec:chap3-sec2} 节介绍了 IoTDB 服务器端对 \emph{insertRecords} 写入请求执行的总体流程，新的执行流程和原有流程大体相似，单针对之前实验中发现的瓶颈，本工作进行了重新设计以优化写入性能。
+\ref{sec:chap3-sec2} 节介绍了 IoTDB 服务器端对 \emph{insertRecords} 写入请求执行的总体流程，新的执行流程和原有流程大体相似，但针对之前实验中发现的瓶颈，本工作进行了重新设计以优化写入性能。
 
 \begin{figure}
   \centering
@@ -99,7 +99,7 @@ FragmentInsertPoolManager 的核心方法是 registerPool 和 submitTask。当�
   \label{fig:batch-wal-design}
 \end{figure}
 
- 如果要减小写前日志的体积，我们可以参考第 \ref{sec:chap6} 章的设计，将一个 FragmentInstance 中的所有记录集中在一起序列化，并使用字典压缩、Gorilla 编码等方法针对设备 ID、测点 ID、时间戳等各部分进行针对性的压缩。但是这样会显著增加写入时的 CPU 开销，让每次写入的延迟变高，反而有可能降低写入性能。因此，我们决定结合 \ref{sec:chap7-sec4} 节的工作，先将一个 FragmentInstance 中的所有记录集合在一起，然后将它们的设备 ID、时间序列 ID、时间戳等信息统一序列化到写前日志中，图 \ref{fig:batch-wal-design} 展示了将一个 FragmentInstance 中所有记录一起记录写前日志的设计。这样虽然不能减少写前日志的体积，但是可以将具有具有相似性的数据聚集到一起，提高数据的局部性。而压缩算法通常利用数据的冗余信息来进行压缩，提高数据的局部性可以使得后续对数据进行压缩时的效率变得更高。
+ 如果要减小写前日志的体积，我们可以参考第 \ref{sec:chap6} 章的设计，将一个 FragmentInstance 中的所有记录集中在一起序列化，并使用字典压缩、Gorilla 编码等方法针对设备 ID、测点 ID、时间戳等各部分进行针对性的压缩。但是这样会显著增加写入时的 CPU 开销，让每次写入的延迟变高，反而有可能降低写入性能。因此，我们决定结合 \ref{sec:chap7-sec4} 节的工作，先将一个 FragmentInstance 中的所有记录集合在一起，然后将它们的设备 ID、时间序列 ID、时间戳等信息统一序列化到写前日志中，图 \ref{fig:batch-wal-design} 展示了将一个 FragmentInstance 中所有记录一起记录写前日志的设计。这样虽然不能减少写前日志的体积，但是可以将具有相似性的数据聚集到一起，提高数据的局部性。而压缩算法通常利用数据的冗余信息来进行压缩，提高数据的局部性可以使得后续对数据进行压缩时的效率变得更高。
 \subsubsection{批量化更新监控信息}
  IoTDB 的监控系统负责监控 IoTDB 运行时的各类指标，以便于用户和开发者了解 IoTDB 的状态，并进行运维和调优。
  在 IoTDB 现有的实现中，每写入一个 FragmentInstance 中的一行记录，就需要更新对应的监控信息，包括创建内存表的耗时、写入写前日志的耗时、写入内存表的耗时、更新内存缓存的耗时等。监控系统为这些监控项都维护了对应的直方图，因此每次写入一行记录需要更多这些监控项对应的直方图。从 \ref{sec:chap3-sec3-1} 节中对 \emph{insertRecords} 和 \emph{insertTablets} 的实验中可以看出，\emph{insertRecords} 写入时更新监控信息的开销明显较大。因此，本工作将这些监控信息的更新批量化，每次写入一批数据才更新一次这些监控信息，以减少这些操作对写入性能的影响。

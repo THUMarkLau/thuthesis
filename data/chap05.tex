@@ -66,7 +66,7 @@
       \STATE \emph{datatypes} = \emph{datatypesList}.at($i$)
       \STATE \emph{values} = \emph{valuesList}.at($i$)
       \STATE \emph{measurementIds} = \emph{timeseriesIdsList}.at($i$)
-      \IF{TabelMap[\emph{device}] is null}
+      \IF{TabletMap[\emph{device}] is null}
         \STATE TabletMap[\emph{device}] = new Tablet()
       \ENDIF 
       \STATE TabletMap[\emph{device}].addRow(\emph{timestamps}, \emph{measurementIds}, \emph{datatypes}, \emph{values})
@@ -114,7 +114,7 @@ IoTDB 中对时间序列 ID 的形式有一定的规定，参考最新的官方�
 \section{内存开销预计算设计}
 IoTDB 中对一行数据进行内存管理时，会计算两类内存占用：数值占据的内存、时间序列元数据（ChunkMetadata）占用的内存。前者是时间序列数值和时间戳所占用的内存，后者是内存中为每条时间序列维护的统计信息，包括最大时间戳、最小时间戳、最大值、最小值、数据点个数等。
 
-数值占据的内存主要由时间序列的类型决定，除文本类型的时间序列外，其他类型的时间序列同一序列下的每个数据点都占据了相同的内存大小。表 \ref{fig:data-type-mem-size} 显示了不同数据类型所占据的内存大小，其中文本类型是一个特殊的类型，其占用的内存大小由两部分组成：Java 中对 Text 对象的指针大小（8 字节）和文本中内容所占据的大小，所以文本类型的时间序列每一个数据点占用的内存可能都不一样，需要根据文本内容的长度计算。
+数值占据的内存主要由时间序列的类型决定，除文本类型的时间序列外，其他类型的时间序列同一序列下的每个数据点都占据了相同的内存大小。表 \ref{tab:data-type-mem-size} 显示了不同数据类型所占据的内存大小，其中文本类型是一个特殊的类型，其占用的内存大小由两部分组成：Java 中对 Text 对象的指针大小（8 字节）和文本中内容所占据的大小，所以文本类型的时间序列每一个数据点占用的内存可能都不一样，需要根据文本内容的长度计算。
 \begin{table}
   \centering
   \caption{不同数据类型在占据内存的大小}
@@ -131,10 +131,10 @@ IoTDB 中对一行数据进行内存管理时，会计算两类内存占用：�
     Text & 8 字节 + 文本的大小 \\
     \bottomrule
   \end{tabular}
-  \label{fig:data-type-mem-size}
+  \label{tab:data-type-mem-size}
 \end{table}
 
-为了加速查询，IoTDB 会为每个写入内存表的时间序列维护一个元数据对象，其中记录了该条时间序列在内存表中数据的统计信息，包括该序列在内存表中数据的最小时间戳、最大时间戳、数据点个数、第一个插入的数据点和最后一个插入的数据点，如果是数值类型，还会记录最大值、最小值、数值总和。所以，一个元数据对象占用的内存空间和这个元数据对象描述的时间序列类型有关，表 \ref{fig:data-type-statistic-mem-size} 显示了不同数据类型的时间序列所对应的元数据对象占据的空间。
+为了加速查询，IoTDB 会为每个写入内存表的时间序列维护一个元数据对象，其中记录了该条时间序列在内存表中数据的统计信息，包括该序列在内存表中数据的最小时间戳、最大时间戳、数据点个数、第一个插入的数据点和最后一个插入的数据点，如果是数值类型，还会记录最大值、最小值、数值总和。所以，一个元数据对象占用的内存空间和这个元数据对象描述的时间序列类型有关，表 \ref{tab:data-type-statistic-mem-size} 显示了不同数据类型的时间序列所对应的元数据对象占据的空间。
 
 \begin{table}
   \centering
@@ -151,7 +151,7 @@ IoTDB 中对一行数据进行内存管理时，会计算两类内存占用：�
     Text & 173 字节 \\
     \bottomrule
   \end{tabular}
-  \label{fig:data-type-statistic-mem-size}
+  \label{tab:data-type-statistic-mem-size}
 \end{table}
 
 在以上两种内存开销中，数值占用的内存开销的计算是与 IoTDB 的状态无关的，而时间序列元数据占用的内存计算则与 IoTDB 的状态有关。这是因为如果在写入数据时，如果内存表中已经包含了写入的时间序列的数据，那么就无需申请一块新的内存保存这条时间序列的元数据；反之，则需要申请新的内存，并且记录这块内存的大小。对于与 IoTDB 状态有关的内存开销计算是无法在客户端完成的，因为客户端并不清楚服务器的内存表中是否已经为待写入的序列创建了元数据对象。所以，客户端只计算数值项所占用的内存大小。
