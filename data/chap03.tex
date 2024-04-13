@@ -117,6 +117,8 @@ public class Tablet {
 \end{figure}
 
 从实验结果中可以看出，当设备数小于 400，即每个设备都有超过 1 条数据时，\emph{insertTablets} 接口的性能要优于 \emph{insertRecords}；当设备数等于 400 时，也就是每个设备在一次请求中都只有 1 条数据时，\emph{insertRecords} 接口要略微优于 \emph{insertTablets}。这个实验结论与上一节中对这两个接口的分析是一致的，使用 Tablet 写入可以利用同一设备的数据被提前聚集的特点进行批量化写入，实现较好的性能；而 \emph{insertRecords} 由于提前不知道同一设备数据的分布，只能一条一条地写入存储引擎，性能较差。当一个请求中每个设备都只有一条数据时，使用 \emph{insertTablets} 接口写入时每个 Tablet 都只有一行数据，此时其执行逻辑实际上和 \emph{insertRecords} 是差不多的。由于 \emph{insertRecords} 针对行式写入有一些优化，因此其性能略好于 \emph{insertTablets}。
+
+
 \subsection{不同接口的使用场景}
 \emph{insertRecords} 和 \emph{insertTablets} 接口在设备和时间两个维度进行了批量化，而 \emph{insertTablet} 接口则时间这个维度进行了批量化。不同批量化维度会导致不同接口的适用场景有所不同。
 
@@ -128,6 +130,20 @@ public class Tablet {
   \item 为了及时写入数据，在每个 Tablet 较小时就进行写入。从上一节的实验结果中我们可以知道这样不仅无法发挥出 Tablet 写入的性能，对数据分 Tablet 进行组装还会对上层应用带来额外的复杂度。
 \end{enumerate}
 如果使用 \emph{insertRecords}，可以令 Record 的数量积攒到一定程度以后一起发送给服务器进行写入，并且 \emph{insertRecords} 的接口形式更加直观，可以减轻用户侧的复杂度。因此，长安汽车在其业务中选择的就是 \emph{insertRecords} 接口进行数据写入。
+
+\begin{table}
+  \centering
+  \caption{不同写入接口的适用场景}
+  \begin{tabular}{lll}
+    \toprule
+    接口 & 使用场景 & 原因 \\
+    \midrule
+    insertTablets & 单设备频率较高 & 写入性能最优\\
+     insertRecords &  单设备频率较低，设备数较多 & 无需长时间积攒数据，延迟较低 \\
+    \bottomrule
+  \end{tabular}
+  \label{tabular:insert-interfaces-scene}
+\end{table}
 
 但是，从 \ref{sec:chap3-sec1-1} 节中的实验结果不难发现，\emph{insertRecords} 接口虽然有着使用方便的优点，但是其性能与 \emph{insertTablets} 接口有一定的差距。因此，如果我们可以将 \emph{insertRecords} 写入接口的性能提升，那么对于用户而言既可以使用比较友好的接口，省去将数据归类为 Tablet 的繁琐过程，又可以获得不错的写入性能。所以，本文的研究重点是如何在保持 \emph{insertRecords} 接口不变的情况下，通过设计新的底层实现机制，实现高性能的 \emph{insertRecords} 写入。
 
