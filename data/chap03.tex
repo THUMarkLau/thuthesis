@@ -206,7 +206,7 @@ IoTDB 在收到 RPC 层组装好的 TSInsertRecordsReq 结构体以后首先会�
   \item \textbf{元数据校验与创建}：区别于前面的语法校验，这一步是与 IoTDB 的内部信息有关的。在这一步骤中，IoTDB 验证写入请求中的时间序列是否已经被创建。如果序列已经被创建，则验证当前写入请求中该时间序列的类型是否与之前创建的类型相符，如不符合就拒绝写入；如果没有创建且用户开启了元数据自动创建功能，就会创建该时间序列的元数据，否则拒绝写入。这个步骤中元数据信息可能不存在当前的 DataNode 节点中，有可能需要通过网络向别的 DataNode 节点拉取元数据信息。为了加速这一步骤，每个 DataNode 都维护了一个元数据的缓存，以减少通过网络获取元数据的次数。
   \item \textbf{获取数据分区信息}：在 IoTDB 中数据被分为多个 DataRegion，每个时间序列的一段数据会被分配到一个 DataRegion 中，不同的 DataRegion 可能处于同一个节点，也可能处于不同的节点。这一步骤计算写入请求中每一条时间序列所属的 DataRegion，并按照所属的 DataRegion 将它们分成多个写入计划片段（FragmentInstance），每个片段都包含了需要写入到一个 DataRegion 中的数据。
 \end{itemize}
-经过这些预处理之后，一个写入请求变成了一个或多个写入计划分片（FragmentInstance），这些 FragmentInstance 有些是写入到本节点的 DataRegion 中的，有些是写入到其他节点的 DataRegion 中的。对于写入到本节点 DataRegion 中的 FragmentInstance，会串行地交给存储引擎执行；对于写入到其他节点 DataRegion 的 FragmentInstance，则会并行地发送给其他节点执行。除此之外，为了能够对 IoTDB 的状态进行观测，以上的每一个步骤都会记录操作所需要的时间，然后记录到 IoTDB 的监控框架中。（TODO：补充一个预处理的流程的图）
+经过这些预处理之后，一个写入请求变成了一个或多个写入计划分片（FragmentInstance），这些 FragmentInstance 有些是写入到本节点的 DataRegion 中的，有些是写入到其他节点的 DataRegion 中的。对于写入到本节点 DataRegion 中的 FragmentInstance，会串行地交给存储引擎执行；对于写入到其他节点 DataRegion 的 FragmentInstance，则会并行地发送给其他节点执行。除此之外，为了能够对 IoTDB 的状态进行观测，以上的每一个步骤都会记录操作所需要的时间，然后记录到 IoTDB 的监控框架中。
 \subsection{存储引擎侧数据写入内存表流程}
 当存储引擎接收到一个 FragmentInstance 之后，首先会检查当前节点写前日志的大小是否超过了一定阈值（默认为 50GB），如果超过了就会阻塞当前写入线程。这么做的原因是，IoTDB 在分布式部署时使用 IoT Consensus 协议在不同节点间进行数据同步\cite{wang2023apache}，数据同步时的每一条日志项就是写前日志的一个日志项。如果写前日志的体积很大，那么说明写入到该节点的数据未能及时同步到其他节点，IoTDB 通过阻塞写入来避免不同节点之间的数据差异进一步扩大。
 
@@ -216,11 +216,26 @@ IoTDB 在收到 RPC 层组装好的 TSInsertRecordsReq 结构体以后首先会�
 
 计算完内存开销以后，为了在 IoTDB 意外崩溃时仍能保证写入数据的持久性，系统为对每行写入的记录都保存一份写前日志（Write Ahead Log，WAL）。IoTDB 首先会将一行写入的记录作为写前日志项（WAL Entry）提交到写前日志序列化队列中，这个队列是一个大小有限的并发安全阻塞队列，队列的另一端有若干个线程将写前日志项序列化为字节流形式的写前日志，并缓存在内存的缓冲区（WAL Buffer）中。当缓冲区的大小超过了阈值（默认为 10MB），或者缓冲区中最旧的数据保持超过了一定的时间（默认为 500ms），就会将内存里的缓冲区持久化到磁盘上\cite{朱海铭2023面向内存表的可动态配置预写日志框架}。在一般情况下，写入线程不会等待内存中的 WAL Buffer 持久化后才进行下一步写入，但是如果写前日志项队列已经满了，那么写入线程就会被阻塞，直到队列前端的 WAL Entry 被序列化并腾出了空间给当前 WAL Entry，写入才会进行到后续的步骤。
 
-当系统成功写完 WAL 以后，就可以将数据插入到内存表（MemTable）中了。IoTDB 的内存表抽象地看是一个两层嵌套的映射（Map）：首先维护从设备 ID（Device ID）到数据块组（ChunkGroup）的映射，每个块组中又维护了时间序列 ID 到数据块（Chunk）的映射。一个数据块组保存了一个设备下的时间序列在内存中缓存的数据，一个数据块则保存了一条时间序列在内存中的数据。写入一行记录时，首先根据该行记录所属的设备找到对应的数据块组，然后把记录里每个数据点分别写入其所属的数据块中，其流程如图（TODO：补充图）所示。
+当系统成功写完 WAL 以后，就可以将数据插入到内存表（MemTable）中了。IoTDB 的内存表抽象地看是一个两层嵌套的映射（Map）：首先维护从设备 ID（Device ID）到数据块组（ChunkGroup）的映射，每个块组中又维护了时间序列 ID 到数据块（Chunk）的映射。一个数据块组保存了一个设备下的时间序列在内存中缓存的数据，一个数据块则保存了一条时间序列在内存中的数据。写入一行记录时，首先根据该行记录所属的设备找到对应的数据块组，然后把记录里每个数据点分别写入其所属的数据块中，其流程如图 \ref{fig:fragment-instance-insert-to-memtable} 所示。
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{FragmentInstance写入MemTable流程.pdf}
+  \caption{Fragment Instance 写入内存表过程}
+  \label{fig:fragment-instance-insert-to-memtable}
+\end{figure}
 
 至此，内存已经保存在了 IoTDB 中。IoTDB 中为了提升查询性能，维护了一些数据缓存以及文件的内存索引。在数据写入内存表后，系统还需要更新数据缓存和文件的内存索引。同时，系统也会记录写入过程中的一系列时间开销，例如记录 WAL 的耗时、写入内存表的耗时等，并将这些统计出来的耗时记录到 IoTDB 的内存框架中。
 \subsection{存储引擎侧数据持久化流程}
-当 IoTDB 的内存表占据的内存到达一定阈值以后，系统就会把内存表持久化到磁盘上，这个过程成为刷盘（Flush）。IoTDB 内存表中刷盘的最基本单位是数据块，也就是一条时间序列在内存中所对应的数据。一个内存数据块会经过编码（Encode）、压缩（Compress）和 I/O 三个阶段的处理最终成为磁盘上的一个数据块，如图（TODO：补充图）这三个过程是异步的过程，互相之间以生产者-消费者模式（Producer-Consumer Pattern）连接。为了在查询时快速定位到磁盘文件的数据块，系统会在每个文件的尾部构建一个当前文件的数据索引。当一个内存表中的所有数据都持久到了磁盘上以后，该内存表占据的内存就会被释放，系统就有了空闲的内存处理新的写入请求。
+当 IoTDB 的内存表占据的内存到达一定阈值以后，系统就会把内存表持久化到磁盘上，这个过程成为刷盘（Flush）。IoTDB 内存表中刷盘的最基本单位是数据块，也就是一条时间序列在内存中所对应的数据。一个内存数据块会经过编码（Encode）、压缩（Compress）和 I/O 三个阶段的处理最终成为磁盘上的一个数据块，如图 \ref{fig:memtable-flush} 这三个过程是异步的过程，互相之间以生产者-消费者模式（Producer-Consumer Pattern）连接。为了在查询时快速定位到磁盘文件的数据块，系统会在每个文件的尾部构建一个当前文件的数据索引。当一个内存表中的所有数据都持久到了磁盘上以后，该内存表占据的内存就会被释放，系统就有了空闲的内存处理新的写入请求。
+
+\begin{figure}
+  \centering
+  \includegraphics[width=\linewidth]{IoTDB刷盘过程.pdf}
+  \caption{内存表持久化过程}
+  \label{fig:memtable-flush}
+\end{figure}
+
 \section{当前机制性能分析}
 \subsection{实验与结果分析\label{sec:chap3-sec3-1}}
 在 \ref{sec:chap3-sec2} 节中，本文介绍了 IoTDB 目前的 \emph{insertRecords} 写入机制。从 \ref{sec:chap3-sec1-1} 节的实验中，本文发现在单个写入请求中，如果每个设备的写入行数大于 1 时，通过 \emph{insertRecords} 接口写入的吞吐和延迟均不如 \emph{insertTablets}。本节将使用 Arthas 工具对使用 \emph{insertRecords} 和 \emph{insertTablets} 接口写入的 IoTDB 进行抽样（Profiling），并结合 IoTDB 监控框架所采集到的数据，分析当前 \emph{insertRecords} 性能较差的原因。
