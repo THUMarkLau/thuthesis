@@ -22,13 +22,13 @@
     \REQUIRE deviceIds, timestamps, timeseriesIdsList, datatypesList, valuesList
 
     \IF{deviceIds.length $\neq$ timestamps.length \OR \\ timestamps.length $\neq$ timeseriesIdsList.length \OR \\ timeseriesIdsList.length $\neq$ datatypesList.length \OR \\ datatypesList.length $\neq$ valuesList.length}
-     \STATE Reject insertion, and throw an exception
+     \STATE 拒绝写入，并抛出异常
     \ENDIF
 
     \STATE $n \leftarrow \text{deviceIds.length}$
     \FOR{$i=1$ to $n$}
       \IF{timeseriesIdsList.at($i$).length $\neq$ datatypesList.at($i$).length \OR \\ datatypesList.at($i$).length $\neq$ valuesList.at($i$).length}
-        \STATE Reject insertion, and throw an exception
+        \STATE 拒绝写入，并抛出异常
       \ENDIF
     \ENDFOR
 
@@ -67,7 +67,7 @@
       \STATE \emph{values} = \emph{valuesList}.at($i$)
       \STATE \emph{measurementIds} = \emph{timeseriesIdsList}.at($i$)
       \IF{TabletMap[\emph{device}] is null}
-        \STATE TabletMap[\emph{device}] = new Tablet()
+        \STATE 向 TabletMap[\emph{device}] 中增加一个空 Tablet
       \ENDIF 
       \STATE TabletMap[\emph{device}].addRow(\emph{timestamps}, \emph{measurementIds}, \emph{datatypes}, \emph{values})
     \ENDFOR
@@ -91,20 +91,19 @@ IoTDB 中对时间序列 ID 的形式有一定的规定，参考最新的官方�
   \small
   \begin{algorithmic}
     \REQUIRE timeseriesIdsList
-    \ENSURE All id is valid
-    \STATE let $n \leftarrow $timeseriesIdsList.length
-    \STATE let $reserveWords$ be the set of reserve words in IoTDB
+    \STATE  $n \leftarrow $timeseriesIdsList.length
+    \STATE $reserveWords$ be the set of reserve words in IoTDB
     \FOR{$i=1$ to $n$}
-    \FOR{every $id$ in timeseriesIdsList.at($i$)}
-    \IF{$id$ is surrounded by back quote}
-      \STATE Remove $id$'s head and tail back quote. 
-      \IF{All other back quotes appear in $id$ is in the form of $`$$`$.}
-      \STATE Replace the origin $id$ with the one that head and tail back quote is removed.
+    \FOR{$id$ in timeseriesIdsList.at($i$)}
+    \IF{$id$ 被反引号包围}
+      \STATE 移除 $id$ 的头尾反引号
+      \IF{$id$ 的其他反引号是以 $`$$`$ 形式出现}
+      \STATE 将 $id$ 替换为头尾反引号被移除后的字符串
       \ELSE
-      \STATE Reject insertion and throw an exception.
+      \STATE 拒绝写入，并抛出异常
       \ENDIF
-    \ELSIF{$reserveWord$ contains $id$ \OR $id$ is a real number \OR $id$ does not match the timeseries id pattern}
-    \STATE Reject insertion, throw an exception
+    \ELSIF{$reserveWord$ 包含 $id$ \OR $id$ 是一个实数 \OR $id$ 不符合时间序列 ID 的规则}
+    \STATE 拒绝写入，并抛出异常
     \ENDIF
     \ENDFOR
     \ENDFOR
@@ -164,18 +163,18 @@ IoTDB 中对一行数据进行内存管理时，会计算两类内存占用：�
   \small
   \begin{algorithmic}
     \REQUIRE datatypesList, valuesList
-    \STATE let $n \leftarrow$ datatypesList.length
-    \STATE let $memCost$ be an integer array of size $n$
+    \STATE $n \leftarrow$ datatypesList.length
+    \STATE $memCost$ be an integer array of size $n$
     \FOR{$i=1$ to $n$}
-      \STATE let types $\leftarrow$ datatypesList.at($i$)
-      \STATE let values $\leftarrow$ valuesList.at($i$)
-      \STATE let $m \leftarrow$ types.length
-      \STATE let $currCost \leftarrow 0$
+      \STATE types $\leftarrow$ datatypesList.at($i$)
+      \STATE values $\leftarrow$ valuesList.at($i$)
+      \STATE $m \leftarrow$ types.length
+      \STATE $currCost \leftarrow 0$
       \FOR{$j=1$ to $m$}
-        \STATE Add memory cost to $currCost$ according to types.get($j$)
-        \IF{types.get($j$) is Text}
-          \STATE Calulate the memory cost of values.get($j$) according to its length, and add it to $currCost$
-        \ENDIF
+        \STATE 根据 types.get($j$) 将对应的内存开销添加到 $currCost$
+        \IF{types.get($j$) 是 Text 类型}
+          \STATE 根据 values.get($j$) 中文本的长度计算其内存开销，并添加到 $currCost$
+        \ENDIF 
       \ENDFOR
       \STATE $memCost[i] \leftarrow currCost$
     \ENDFOR

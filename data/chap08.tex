@@ -306,7 +306,7 @@
   \includegraphics[width=0.7\linewidth]{四维智联时间序列频率分布.png}
   \caption{四维智联时间序列频率分布图}
   \label{fig:swzl-freq-distribution}
-\end{figure}
+\end{figure} 
 
 四维智联的负载每个设备下都有 27 条时间序列，其频率分布如图 \ref{fig:swzl-freq-distribution} 所示，其中超过一半的序列每隔 1 秒钟就会产生一个数据点，大约 35\% 的序列每隔 10 秒才会产生一次数据点，剩下的序列每隔 100 秒才会产生一次数据点。其包含了 25 万个设备和 675 万条时间序列，按照数据产生的频率计算，每秒钟应该写入 1110330 个数据点。
 
@@ -317,14 +317,8 @@
   \label{fig:bw-freq-distribution}
 \end{figure}
 
-宝武集团的负载特征如图 \ref{fig:bw-freq-distribution} 和图 \ref{fig:bw-device-measurement-count} 所示，其每个设备的序列数大部分为 1 个或 3 个，时间序列由少量极高频（每隔 $10^{-2}$ 毫秒就产生一个数据点）和大量低频（每隔 100 秒才产生一个数据点）以及一些中频（每隔几秒或几十秒产生一个数据点）组成。其包含 25 万个设备和 267516 条时间序列，根据序列数量和序列的频率计算，理想情况下每秒钟应该写入 1410360 个数据点。
+宝武集团的负载特征如图 \ref{fig:bw-freq-distribution} 所示，时间序列由少量极高频（每隔 $10^{-2}$ 毫秒就产生一个数据点）和大量低频（每隔 100 秒才产生一个数据点）以及一些中频（每隔几秒或几十秒产生一个数据点）组成。宝武负载中每个设备包含 1 条或 3 条时间序列，相较于其他负载每个设备下时间序列的数量较少。整个模拟负载包含 25 万个设备和 267516 条时间序列，根据序列数量和序列的频率计算，理想情况下每秒钟应该写入 1410360 个数据点。
 
-\begin{figure}
-  \centering
-  \includegraphics[width=0.7\linewidth]{宝武集团设备序列数分布.png}
-  \caption{宝武集团设备序列数分布图}
-  \label{fig:bw-device-measurement-count}
-\end{figure}
 
 以上三个用户场景构成了模拟负载的集合，我们将使用这些负载来测试前文的优化措施对 IoTDB 写入性能的提升。 
 \subsection{测试结果}

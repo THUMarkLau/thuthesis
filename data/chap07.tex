@@ -1,6 +1,6 @@
 % !TeX root = ../thuthesis-example.tex
 
-\chapter{服务器端高性能 \emph{insertRecords} 写入机制设计与实现}
+\chapter{服务器端高性能写入机制设计与实现}
 经过客户端的预处理与 RPC 层的数据传输，写入请求最终会到达服务器端。服务器端对写入请求进行预处理后，交由存储引擎负责处理写入请求，并将这些数据最终持久化到磁盘上，服务器端的设计与实现对写入性能有至关重要的影响。如 \ref{sec:chap3-sec3-1} 中的实验结果所示，现有 IoTDB 服务器端对写入请求的处理有较大的性能瓶颈，不能满足高并发写入请求的需求。因此，本章将介绍对 \emph{insertRecords} 写入请求所设计的服务器端高性能写入机制。
 
 
@@ -136,19 +136,19 @@ IoTDB 支持一种名为 Last 查询的查询方式，它可以查询某个时�
   \label{alg:batch-update-cache}
   \small
   \begin{algorithmic}
-    \REQUIRE FragmentInstance
-    \ENSURE LastCache is updated
+    \REQUIRE 写入计划分片 FragmentInstance
+    \ENSURE LastCache 被更新
     \STATE $n \leftarrow $FragmentInstance.size
     \STATE $lastCache \leftarrow $new HashMap<TimeSeriesId, Pair<Timestamp, Value>>
     \FOR{$i=1$ to $n$}
     \STATE $tsId \leftarrow $FragmentInstance.getTsId($i$)
     \STATE $timestamp \leftarrow $FragmentInstance.getTimestamp($i$)
     \STATE $value \leftarrow $FragmentInstance.getValue($i$)
-    \IF{$tsId$ is not in $lastCache$ or $timestamp > lastCache.get(tsId).getKey$}
+    \IF{$tsId$ 不在 $lastCache$ 中 \OR $timestamp > lastCache.get(tsId).getKey$}
     \STATE $lastCache.put(tsId, \langle timestamp, value \rangle)$
     \ENDIF
     \ENDFOR
-    \STATE Update LastCache with $lastCache$
+    \STATE 使用 $lastCache$ 更新系统全局的 LastCache
   \end{algorithmic}
 \end{algorithm}
 \subsubsection{批量化写入内存表}
