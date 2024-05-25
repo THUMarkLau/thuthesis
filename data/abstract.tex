@@ -4,18 +4,17 @@
 
 \begin{abstract}
   % 关键词用“英文逗号”分隔，输出时会自动处理为正确的分隔符
-  % 近年来，工业物联网的发展迅猛，产生了越来越多的时序数据，如何高效地写入和存储这些时序数据成为了一个重要的问题。Apache IoTDB 是一款面向物联网场景的时序数据库，其目前支持使用 SQL 写入、按 Tablet 写入（\emph{InsertTablets}）、按 Records 写入（\emph{InsertRecords}）。其中 \emph{InsertRecords} 接口具有较好的易用性和写入性能，且对不同场景的适用性最广泛，被大量用户所使用。
 
-  近年来，随着工业物联网的迅猛发展，时序数据急剧增加，如何高效地处理和存储这些数据成为亟待解决的问题。Apache IoTDB 是一款面向物联网场景的时序数据库，其提供了单条数据写入和批量数据写入提供了两种数据写入形式。在处理大规模时序数据时，批量数据写入展现出更优越的性能，因而成为大多数用户的首选方式。IoTDB的存储引擎基于日志合并树结构，数据被有序地存储在内存表和磁盘表中。这些数据均按照设备为粒度，以列式方式组织，有效地提高了数据处理的效率。对应这种数据组织形式，IoTDB 提供了单设备列式批量写入（\emph{InsertTablet}）和多设备批量行式写入（\emph{InsertRecords}）两种批量化写入数据的形式，后者因其易用性和广泛的场景适应性，受到了大量用户的青睐。
+  近年来，随着工业物联网的迅猛发展，时序数据量急剧增加，如何高效地处理和存储这些数据成为亟待解决的问题。时序数据库的写入方式根据一个写入请求中数据的数量，可以分为单记录写入和多记录写入；根据写入数据的设备数，可以分为单设备写入和多设备写入。其中，多设备多记录写入是最常见的一种写入方式。Apache IoTDB 通过 InsertRecords 接口提供了多设备多记录写入的功能，该接口具有较好的易用性和写入性能，且对不同场景的适用性最广泛，被大量用户所使用。
   
-  面对工业物联网场景日益增大的写入负载，优化 \emph{InsertRecords} 写入性能不仅可以提高 IoTDB 的上限以满足更高负载场景的写入需求，也可以在相同写入场景下占用更少的资源，帮助用户节省成本，具有重要的现实意义。本工作针对现有 IoTDB 的 \emph{InsertRecords} 写入机制进行了分析，并从客户端、RPC 层、存储引擎三个方面分别进行了优化，提升了 \emph{InsertRecords} 写入机制的性能。本工作的主要贡献如下：
+  面对工业物联网场景日益增大的写入负载，优化 InsertRecords 的写入性能以节约用户成本具有重要的现实意义。本工作针对现有 IoTDB 的 InsertRecords 写入机制进行了分析，并从客户端、RPC 层、存储引擎三个方面分别进行了优化，提升了 InsertRecords 写入机制的性能。本工作的主要贡献如下：
   \begin{enumerate}
-    \item 完整分析了现有 IoTDB \emph{InsertRecords} 写入机制的执行流程，并在压力测试场景下使用性能分析工具量化了各个环节的性能开销，确定了已有 \emph{InsertRecords} 写入机制的瓶颈所在，包括网络带宽瓶颈、存储引擎未批量化执行、存储引擎磁盘瓶颈等，然后从设计和实现的角度分析了导致瓶颈出现的原因。
-    \item 从客户端、RPC 层、存储引擎三个方面优化了 IoTDB 的 \emph{InsertRecords} 写入机制，包括客户端请求格式转换、数据预处理、写入请求列式序列化、存储引擎批量化执行、写前日志压缩等，解决了发现的 \emph{InsertRecords} 写入机制的瓶颈，从而提高了写入性能。
-    \item 使用压力测试工具，对各个优化措施所带来的性能提升进行了测试，验证了优化措施的有效性。为了贴近用户的真实场景，本工作设计并实现了一套用户负载采样以及模拟运行程序，通过对若干用户的真实负载进行采样，生成了一系列模拟负载，然后使用这些模拟负载对优化前后的 IoTDB 的 \emph{InsertRecords} 写入机制进行了测试。
+    \item 完整分析了现有 IoTDB InsertRecords 写入机制的执行流程，并在压力测试场景下使用性能分析工具量化了各个环节的性能开销，确定了已有 InsertRecords 写入机制的瓶颈所在，包括网络带宽瓶颈、存储引擎未批量化执行、存储引擎磁盘瓶颈等，然后从设计和实现的角度分析了导致瓶颈出现的原因。
+    \item 从客户端、RPC 层、服务器三个方面优化了 IoTDB 的 InsertRecords 写入机制，包括客户端请求格式转换、数据预处理、写入请求列式序列化、存储引擎批量化执行、写前日志压缩等，解决了发现的 InsertRecords 写入机制的瓶颈，从而提高了写入性能。
+    \item 使用压力测试工具，对各个优化措施所带来的性能提升进行了测试，验证了优化措施的有效性。为了贴近用户的真实场景，本工作设计并实现了一套用户负载采样以及模拟运行程序，通过对若干用户的真实负载进行采样，生成了一系列模拟负载，然后使用这些模拟负载对优化前后的 IoTDB 的 InsertRecords 写入机制进行了测试。
   \end{enumerate}
 
-  实验结果表明，本工作的优化让 IoTDB 的 \emph{InsertRecords} 写入机制在压测场景下吞吐提升了 116\%、延迟降低了 75\% 的同时节约了 11\% 的磁盘资源和 95\% 的网络带宽资源，证明经过优化以后 \emph{InsertRecords} 写入机制效率得到了提升。
+  实验结果表明，本工作的优化让 IoTDB 的 InsertRecords 写入机制在压测场景下吞吐提升了 115.9\%、延迟降低了 72.5\% 的同时节约了 28.4\% 的磁盘资源和 95.1\% 的网络带宽资源，证明经过优化以后 InsertRecords 写入机制效率得到了提升。
   \thusetup{
     keywords = {工业物联网, 时序数据库, 性能分析, 写入性能优化},
   }
@@ -24,17 +23,17 @@
 \begin{abstract*}
   % Use comma as separator when inputting
 
-  In recent years, with the rapid development of the Industrial Internet of Things, time series data has increased dramatically. How to efficiently process and store these data has become an urgent problem to be solved. Apache IoTDB is a time series database for IoT scenarios. It provides two forms of data writing: single data writing and batch data writing. When processing large-scale time series data, batch data writing shows superior performance, making it the preferred method for most users. IoTDB's storage engine is based on the Log-Structured Merge-Tree. Data is orderly stored in memory tables and disk tables. All data is organized in a columnar manner with devices as the granularity, effectively improving data processing efficiency. Corresponding to this data organization, IoTDB provides two forms of batch data writing: single-device columnar batch writing (\emph{InsertTablet}) and multi-device batch row writing (\emph{InsertRecords}). The latter is favored by a large number of users due to its ease of use and wide range of scenarios adaptability.
+  In recent years, with the rapid development of the industrial Internet of Things (IIoT), the volume of time-series data has increased dramatically. Efficiently processing and storing this data has become an urgent issue. The write methods of time-series databases can be divided into single-record writes and multi-record writes based on the number of data points in a write request, and into single-device writes and multi-device writes based on the number of devices writing data. Among these, multi-device multi-record writes are the most common. Apache IoTDB provides the functionality for multi-device multi-record writes through the InsertRecords interface, which is widely used due to its ease of use and write performance, and its broad applicability to different scenarios.
 
-  Faced with the increasing write load in the Industrial Internet of Things scenarios, optimizing the \emph{InsertRecords} write performance can not only raise the upper limit of IoTDB to meet the write demands of higher load scenarios but also consume fewer resources in the same write scenarios, helping users save costs. This optimization holds significant practical importance. This work analyzes the existing IoTDB's \emph{InsertRecords} write mechanism and optimizes it from three aspects: client, RPC layer, and storage engine, thereby improving the performance of the \emph{InsertRecords} write mechanism. The main contributions of this work are as follows:
-  
-  \begin{enumerate}
-  \item We comprehensively analyzed the execution flow of the existing IoTDB \emph{InsertRecords} write mechanism and quantified the performance overhead of each link using a performance analysis tool under stress testing scenarios. We identified the bottlenecks of the existing \emph{InsertRecords} write mechanism, including network bandwidth bottlenecks, non-batch execution of the storage engine, and storage engine disk bottlenecks. Then, we analyzed the reasons for these bottlenecks from the design and implementation perspectives.
-  \item We optimized the IoTDB's \emph{InsertRecords} write mechanism from three aspects: client, RPC layer, and storage engine. These optimizations included client request format conversion, data preprocessing, column-based serialization of write requests, batch execution of the storage engine, and log compression before writing. These measures addressed the identified bottlenecks of the \emph{InsertRecords} write mechanism, thereby improving write performance.
-  \item Using stress testing tools, we tested the performance improvements brought about by various optimization measures, verifying their effectiveness. To closely mimic real user scenarios, we designed and implemented a user load sampling and simulation program. By sampling the real loads of several users, we generated a series of simulated loads. Then, we tested the IoTDB's \emph{InsertRecords} write mechanism before and after optimization using these simulated loads.
-  \end{enumerate}
-  
-  Experimental results showed that our optimizations increased the throughput of IoTDB's \emph{InsertRecords} write mechanism by 116\% and reduced latency by 75\% in stress testing scenarios. Additionally, it saved 11\% of disk resources and 95\% of network bandwidth resources, proving that the efficiency of IoTDB's \emph{InsertRecords} write mechanism had been improved after our optimizations.
+Facing the increasing write load in IIoT scenarios, optimizing the write performance of InsertRecords to save user costs is of significant practical importance. This work analyzes the existing InsertRecords write mechanism of IoTDB and optimizes it from three aspects: client, RPC layer, and storage engine, thereby enhancing the performance of the InsertRecords write mechanism. The main contributions of this work are as follows:
+\begin{enumerate}
+  \item We comprehensively analyzed the execution process of the existing IoTDB InsertRecords write mechanism and quantified the performance overhead of each stage using performance analysis tools under stress test scenarios. We identified the bottlenecks in the existing InsertRecords write mechanism, including network bandwidth bottlenecks, non-batch execution of the storage engine, and storage engine disk bottlenecks. We then analyzed the reasons for these bottlenecks from a design and implementation perspective.
+  \item We optimized the IoTDB InsertRecords write mechanism from three aspects: client, RPC layer, and server. The optimizations include client request format conversion, data preprocessing, columnar serialization of write requests, batch execution of the storage engine, and write-ahead log compression, addressing the identified bottlenecks and improving write performance.
+  \item Using stress testing tools, we tested the performance improvements brought by each optimization measure to verify their effectiveness. To closely resemble real user scenarios, we designed and implemented a user load sampling and simulation program. By sampling the real loads of several users, we generated a series of simulated loads, and then tested the InsertRecords write mechanism of IoTDB before and after optimization using these simulated loads.
+\end{enumerate}
+
+The experimental results show that our optimizations increased the throughput of the InsertRecords write mechanism by 115.9\%, reduced latency by 72.5%, while saving 28.4% of disk resources and 95.1% of network bandwidth resources under stress test scenarios, proving that the efficiency of the InsertRecords write mechanism was improved after optimization.
+
   \thusetup{
     keywords* = {Industrial Internet of Things, Time-series Database, Performance Analysis, Writing Performance Optimization},
   }

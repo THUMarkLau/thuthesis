@@ -325,7 +325,7 @@ IoTDB 所使用的配置如表 \ref{tabular:insert-records-profile-iotdb-config}
   \label{tabular:insert-records-profile-result}
 \end{table}
 
-表 \ref{tabular:wal-vs-tsfile-size} 记录了在上述 IoTDB 和 IoT Benchmark 配置下，使用 \emph{insertTablets} 接口和 \emph{insertRecords} 接口写入 20 分钟以后 IoTDB 向磁盘写入的 TsFile 总大小和写前日志总大小。在运行同样时间的写入后，使用 \emph{insertRecords} 接口不仅比使用 \emph{insertTablets} 接口写入的数据更多，产生的写前日志体积也更小。更多的写前日志意味着系统宝贵的 I/O 资源和内存资源中有相当大一部分被 WAL 占用了，从而导致系统的写入性能下滑。此外，当 WAL 体积过大，导致系统的 I/O 资源紧张无法将 WAL 及时写到磁盘上时，根据前文中所展示的 \emph{insertRecords} 写入流程，写入线程就有可能在向写前日志项队列提交任务时被阻塞，进一步降低了系统的性能。
+表 \ref{tabular:wal-vs-tsfile-size} 记录了在上述 IoTDB 和 IoT Benchmark 配置下，使用 \emph{insertTablets} 接口和 \emph{insertRecords} 接口写入 20 分钟以后 IoTDB 向磁盘写入的 TsFile 总大小和写前日志总大小。在运行同样时间的写入后，使用 \emph{ insertTablets} 接口不仅比使用 \emph{insertRecords} 接口写入的数据更多，产生的写前日志体积也更小。更多的写前日志意味着系统宝贵的 I/O 资源和内存资源中有相当大一部分被 WAL 占用了，从而导致系统的写入性能下滑。此外，当 WAL 体积过大，导致系统的 I/O 资源紧张无法将 WAL 及时写到磁盘上时，根据前文中所展示的 \emph{insertRecords} 写入流程，写入线程就有可能在向写前日志项队列提交任务时被阻塞，进一步降低了系统的性能。
 
 
 \begin{table}

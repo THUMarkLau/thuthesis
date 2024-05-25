@@ -47,7 +47,7 @@
 
 \begin{figure}
   \centering
-  \includegraphics[width=0.9\linewidth]{Records 转换为 Tablets 性能对比.png}
+  \includegraphics[width=0.8\linewidth]{Records 转换为 Tablets 性能对比.png}
   \caption{客户端请求格式转换实验吞吐量对比}
   \label{fig:records-to-tablets-performance-throughput}
 \end{figure}
@@ -56,7 +56,7 @@
 
 \begin{figure}
   \centering
-  \includegraphics[width=0.8\linewidth]{Records 转 Tablets 平均延迟分布.png}
+  \includegraphics[width=0.7\linewidth]{Records 转 Tablets 平均延迟分布.png}
   \caption{客户端请求格式转换实验平均延迟对比}
   \label{fig:records-to-tablets-performance-avg-latency}
 \end{figure}
@@ -65,7 +65,7 @@
 
 \begin{figure}
   \centering
-  \includegraphics[width=0.8\linewidth]{Records 转 Tablets CPU 资源.png}
+  \includegraphics[width=0.7\linewidth]{Records 转 Tablets CPU 资源.png}
   \caption{客户端请求格式转换实验服务区端 CPU 资源消耗对比}
   \label{fig:records-to-tablets-performance-cpu-consuming}
 \end{figure}
@@ -116,7 +116,11 @@
 \end{table}
 
 \section{存储引擎优化写入性能测试}
-本节测试对存储的优化对性能的提升。
+本节测试对存储的优化对性能的提升，测试的性能指标包含吞吐、平均延迟、P99 延迟，资源占用指标包含服务器的 CPU 消耗、磁盘利用率、磁盘吞吐以及网络吞吐。
+
+在性能指标中，吞吐越高代表 IoTDB 每秒钟能写入的数据点数越多；平均延迟代表客户端每个写入请求从开始发送到收到响应的平均时间，时间越短代表服务器对单个写入请求处理的速度越快；P99 延迟表示在所有延迟样本中，99\% 的请求延迟都低于或等于这个值，只有 1\% 的请求延迟超过这个值，P99 延迟越小，代表系统对写入请求的处理越稳定。
+
+在资源占用指标中，CPU 消耗以百分比的形式表示，代表一个时间周期中 CPU 工作时间的占比；磁盘利用率代表磁盘在一个时间周期中的工作时间占比；磁盘吞吐和网络吞吐则分别表示磁盘和网卡在一个时间周期中的数据传输速率。在写入相同数据量的情况下，资源占用指标越低，代表系统对资源的要求越低，系统的处理效率越高。
 \subsection{存储引擎批量化写入性能测试}
 存储引擎批量化写入主要包括批量化更新监控系统、批量化写入内存表、批量化更新内存缓存、批量化序列化写前日志。这四个优化点优化原理是尽可能地将可以一起被写入的数据绑定起来一起写入或操作，从而平摊写入中的一些固定开销，进而提高性能。
 \begin{table}
@@ -293,6 +297,8 @@
   \label{fig:zysd-bx-device-measurement-count}
 \end{figure}
 
+中冶赛迪模拟负载包含了 20 万个设备与 353.2 万条时间序列，其设备序列数分布如图 \ref{fig:zysd-bx-device-measurement-count} 所示，时间序列的频率分布如图 \ref{fig:zysd-bx-freq-distribution} 所示。中冶赛迪镔鑫负载中大部分序列都是 1 秒产生一个时间点，少量序列几百秒才产生一次数据，极少数序列每隔一百毫秒就会产生一个数据点。每个设备的时间序列数量主要为 2-15 个。根据时间序列数与序列的频率计算，理想情况下数据库需要写入 3391316 个数据点。
+
 \begin{figure}
   \centering
   \includegraphics[width=0.7\linewidth]{中冶赛迪镔鑫项目频率分布.png}
@@ -300,7 +306,7 @@
   \label{fig:zysd-bx-freq-distribution}
 \end{figure}
 
-中冶赛迪模拟负载包含了 20 万个设备与 353.2 万条时间序列，其设备序列数分布如图 \ref{fig:zysd-bx-device-measurement-count} 所示，时间序列的频率分布如图 \ref{fig:zysd-bx-freq-distribution} 所示。中冶赛迪镔鑫负载中大部分序列都是 1 秒产生一个时间点，少量序列几百秒才产生一次数据，极少数序列每隔一百毫秒就会产生一个数据点。每个设备的时间序列数量主要为 2-15 个。根据时间序列数与序列的频率计算，理想情况下数据库需要写入 3391316 个数据点。
+
 \begin{figure}
   \centering
   \includegraphics[width=0.7\linewidth]{四维智联时间序列频率分布.png}
@@ -310,14 +316,15 @@
 
 四维智联的负载每个设备下都有 27 条时间序列，其频率分布如图 \ref{fig:swzl-freq-distribution} 所示，其中超过一半的序列每隔 1 秒钟就会产生一个数据点，大约 35\% 的序列每隔 10 秒才会产生一次数据点，剩下的序列每隔 100 秒才会产生一次数据点。其包含了 25 万个设备和 675 万条时间序列，按照数据产生的频率计算，每秒钟应该写入 1110330 个数据点。
 
+
+宝武集团的负载特征如图 \ref{fig:bw-freq-distribution} 所示，时间序列由少量极高频（每隔 $10^{-2}$ 毫秒就产生一个数据点）和大量低频（每隔 100 秒才产生一个数据点）以及一些中频（每隔几秒或几十秒产生一个数据点）组成。宝武负载中每个设备包含 1 条或 3 条时间序列，相较于其他负载每个设备下时间序列的数量较少。整个模拟负载包含 25 万个设备和 267516 条时间序列，根据序列数量和序列的频率计算，理想情况下每秒钟应该写入 1410360 个数据点。
+
 \begin{figure}
   \centering
-  \includegraphics[width=0.5\linewidth]{宝武集团时间序列频率分布.png}
+  \includegraphics[width=0.7\linewidth]{宝武集团时间序列频率分布.png}
   \caption{宝武集团时间序列频率分布图}
   \label{fig:bw-freq-distribution}
 \end{figure}
-
-宝武集团的负载特征如图 \ref{fig:bw-freq-distribution} 所示，时间序列由少量极高频（每隔 $10^{-2}$ 毫秒就产生一个数据点）和大量低频（每隔 100 秒才产生一个数据点）以及一些中频（每隔几秒或几十秒产生一个数据点）组成。宝武负载中每个设备包含 1 条或 3 条时间序列，相较于其他负载每个设备下时间序列的数量较少。整个模拟负载包含 25 万个设备和 267516 条时间序列，根据序列数量和序列的频率计算，理想情况下每秒钟应该写入 1410360 个数据点。
 
 
 以上三个用户场景构成了模拟负载的集合，我们将使用这些负载来测试前文的优化措施对 IoTDB 写入性能的提升。 
