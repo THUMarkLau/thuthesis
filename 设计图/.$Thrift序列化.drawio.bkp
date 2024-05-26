@@ -1,0 +1,79 @@
+<mxfile host="Electron" modified="2024-05-25T16:35:45.979Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/23.1.5 Chrome/120.0.6099.109 Electron/28.1.0 Safari/537.36" etag="HFQW8GgzrsRERwqjmSCM" version="23.1.5" type="device">
+  <diagram name="第 1 页" id="6gweLEmaRja9l2hIyPtt">
+    <mxGraphModel dx="1025" dy="854" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-1" target="IyiD-a_OWmXIkTW7xQY4-3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-1" value="&lt;div data-page-id=&quot;AdwZdK88gor9t8xHlOtcxcC6nlO&quot; data-docx-has-block-data=&quot;false&quot;&gt;&lt;div style=&quot;&quot; class=&quot;old-record-id-FvqXdyznIoHG8mxdVZmcUyeOnTe&quot;&gt;写消息开始的标志&lt;/div&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="200" y="213" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-3" target="IyiD-a_OWmXIkTW7xQY4-5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-3" value="&lt;font face=&quot;Times New Roman&quot;&gt;校验当前参数是否合法&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="350" y="213" width="140" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-30" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-5" target="IyiD-a_OWmXIkTW7xQY4-8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-5" value="写一个结构体开始的标志" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="510" y="213" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-8" target="IyiD-a_OWmXIkTW7xQY4-10" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-8" value="写一个字段开始的标志" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="510" y="280" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-10" target="IyiD-a_OWmXIkTW7xQY4-12" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-10" value="写入字段的内容" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="350" y="280" width="140" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-12" target="IyiD-a_OWmXIkTW7xQY4-15" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-12" value="写入字段结束的标志" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="200" y="280" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-34" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-15" target="IyiD-a_OWmXIkTW7xQY4-8" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="290" y="340" />
+              <mxPoint x="570" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-38" value="是" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Times New Roman;" parent="IyiD-a_OWmXIkTW7xQY4-34" vertex="1" connectable="0">
+          <mxGeometry x="0.0188" y="-1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-35" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-15" target="IyiD-a_OWmXIkTW7xQY4-19" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-39" value="否" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Times New Roman;" parent="IyiD-a_OWmXIkTW7xQY4-35" vertex="1" connectable="0">
+          <mxGeometry x="0.1739" y="1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-15" value="是否有字段剩余" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="200" y="355" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontFamily=Times New Roman;" parent="1" source="IyiD-a_OWmXIkTW7xQY4-19" target="IyiD-a_OWmXIkTW7xQY4-21" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-19" value="写一个结构体结束的标志" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="350" y="355" width="140" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="IyiD-a_OWmXIkTW7xQY4-21" value="写一个消息结束的标志" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
+          <mxGeometry x="510" y="355" width="120" height="45" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -38,7 +38,7 @@ public class Tablet {
   public int rowSize;
 }
 \end{lstlisting}
-InsertRecord 和 InsertRecords 的参数含义则如表 \ref{tabular:insert-record-params} 和表 \ref{tabular:insert-records-params} 所示，\emph{Tablet} 的成员变量含义如表 \ref{tabular:class-tablet-param} 所示。
+InsertRecord 和 InsertRecords 的参数含义如表 \ref{tabular:insert-record-params} 和表 \ref{tabular:insert-records-params} 所示，\emph{Tablet} 的成员变量含义如表 \ref{tabular:class-tablet-param} 所示。
 \begin{table}
   \centering
   \caption{InsertRecord 参数说明}
@@ -119,7 +119,7 @@ InsertRecords 接口和 InsertTablets 接口在批量化的维度上是相同的
 
 
 \subsection{不同写入方式的适用场景}
-InsertRecords 和 InsertTablets 在设备和时间两个维度进行了批量化，而 InsertTablet 则时间这个维度进行了批量化。不同批量化维度会导致不同写入方式的适用场景有所不同。
+InsertRecords 和 InsertTablets 在设备和时间两个维度进行了批量化，而 InsertTablet 则在时间这个维度进行了批量化。不同批量化维度会导致不同写入方式的适用场景有所不同。
 
 按照数据产生的频率进行划分，可以将时序数据写入的场景分为高频和中低频两种场景。在高频场景中，传感器的采样率很高，短时间内会产生大量时序数据，并且这些数据都属于同一个设备。例如在风力发电场景中风机上的传感器在某些情况下的采样频率可以达到 8 KHz\cite{李天安2020apache}，如果将，每一个风机建模为一个设备，并且假设传感器的采样频率一致，那么一个设备每秒钟就会产生 8000 行数据。在中低频场景中，传感器的采样频率较低，可能每隔几十秒传感器才会产生一个数据点。例如在长安汽车的车联网场景中，每一辆汽车被建模为一个设备，汽车上的传感器每隔 30 秒才会进行一次采样，如果所有传感器的采样频率一致，那么一个设备每隔 30 秒才会产生一行数据。
 
@@ -242,7 +242,7 @@ IoTDB 在收到 RPC 层组装好的 TSInsertRecordsReq 结构体以后首先会�
 
 至此，写入的数据已经保存在了 IoTDB 中。IoTDB 中为了提升查询性能，维护了一些数据缓存以及文件的内存索引。在数据写入内存表后，系统还需要更新数据缓存和文件的内存索引。同时，系统也会记录写入过程中的一系列时间开销，例如记录 WAL 的耗时、写入内存表的耗时等，并将这些统计出来的耗时记录到 IoTDB 的监控框架中。
 \subsection{存储引擎侧数据持久化流程}
-当 IoTDB 的内存表占据的内存到达一定阈值以后，系统就会把内存表持久化到磁盘上，这个过程成为刷盘（Flush）。IoTDB 内存表中刷盘的最基本单位是 Chunk，也就是一条时间序列在内存中所对应的数据。一个内存数据块会经过编码（Encode）、压缩（Compress）和 I/O 三个阶段的处理最终成为磁盘上的一个数据块。如图 \ref{fig:memtable-flush} 所示，这三个过程是异步的，互相之间以生产者-消费者模式（Producer-Consumer Pattern）连接。为了在查询时快速定位到磁盘文件的数据块，系统会在每个文件的尾部构建一个当前文件的数据索引。当一个内存表中的所有数据都持久到了磁盘上以后，该内存表占据的内存就会被释放，系统就有了空闲的内存处理新的写入请求。
+当 IoTDB 的内存表占据的内存到达一定阈值以后，系统就会把内存表持久化到磁盘上，这个过程称为刷盘（Flush）。IoTDB 内存表中刷盘的最基本单位是 Chunk，也就是一条时间序列在内存中所对应的数据。一个内存数据块会经过编码（Encode）、压缩（Compress）和 I/O 三个阶段的处理最终成为磁盘上的一个数据块。如图 \ref{fig:memtable-flush} 所示，这三个过程是异步的，互相之间以生产者-消费者模式（Producer-Consumer Pattern）连接。为了在查询时快速定位到磁盘文件的数据块，系统会在每个文件的尾部构建一个当前文件的数据索引。当一个内存表中的所有数据都持久到了磁盘上以后，该内存表占据的内存就会被释放，系统就有了空闲的内存处理新的写入请求。
 
 \begin{figure}
   \centering

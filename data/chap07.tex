@@ -17,7 +17,7 @@
 图 \ref{fig:iotdb-insertRecords-flow} 展示了 InsertRecords 写入请求到达 IoTDB 服务器端以后的总体执行流程，其中斜线部分代表这些流程与 IoTDB 原有设计基本保持一致，因为它们并不是写入的瓶颈所在；灰色部分代表了在原有实现中存在的性能瓶颈，本工作对这些部分进行了重新设计与实现以提高写入性能。
 
 
-在执行分布式写入计划时，一个写入请求会被分为多个写入计划分片（称为 FragmentInstance，FI），每个 FI 都是写入到一个 Data Region 中的计划。根据 Data Region 的分布，可以将其分为本地 Data Region 和远程 Data Region。本地 Data Region 是指存储引擎所在的节点上的 Data Region，远程 Data Region 是指存储引擎所在节点以外的 Data Region。为了充分利用多核 CPU 的计算能力，本工作将写入本地和写入远程 Data Region 的过程都设计为了多线程并行执行，以提高写入性能。
+在执行分布式写入计划时，一个写入请求会被分为多个写入计划分片（称为 FragmentInstance，FI），每个 FI 都是写入到一个 Data Region 中的计划。根据 Data Region 的分布，可以将其分为本地 Data Region 和远程 Data Region。本地 Data Region 是指存储引擎所在的节点上的 Data Region，远程 Data Region 是指存储引擎所在节点以外的 Data Region。为了充分利用多核 CPU 的计算能力，本工作将写入本地和写入远程 Data Region 的过程都设计成多线程并行执行，以提高写入性能。
 
 在存储引擎写入单个计划分片时，不仅需要将数据记录到内存表中，还需要执行记录写前日志、更新监控信息、维护内存索引等操作。这些操作大部分都不是核心的写入操作，但是却会对写入性能产生较大的影响。因此，本工作通过批量化的形式，将这些操作的代价分摊到多行写入记录上，以减少这些操作对写入性能的影响。例如，原本每写入一行记录就需要记录一次写前日志、更新一次监控信息、维护一次内存索引，现在可以将这些操作批量化，每写入一批记录才执行一次这些操作，这样平均到每一条记录上的代价就大大减小了。最后，为了改善前文提到的使用 InsertRecords 进行写入时写前日志过多的问题，本工作对写前日志进行了压缩，减少了写前日志对磁盘的写入量，提高了写入性能。下面将详细介绍这些优化措施的设计与实现。
 
@@ -90,7 +90,7 @@ FragmentInsertPoolManager 的核心方法是 registerPool 和 submitTask。当�
   \label{fig:origin-wal-format}
 \end{figure}
 
-图 \ref{fig:origin-wal-format} 展示了在原有 IoTDB 的实现中，一个 FragmentInstance 在写入时记录写前日志的流程和格式。对一个 FragmentInstance 中的每一行记录，都需要单独记录一次写前日志，每次都需要记录这些记录的时间戳、设备 ID、时间序列 ID 和数值项等，而这其中有相当一部分信息是重复的。这样的设计会导致写前日志的体积过大，增加对磁盘的写入量，从而影响写入性能。
+图 \ref{fig:origin-wal-format} 展示了在原有 IoTDB 的实现中，一个 FragmentInstance 在写入时记录写前日志的流程和格式。对一个 FragmentInstance 中的每一行记录，都需要单独记录一次写前日志，每次都需要记录这些记录的时间戳、设备 ID、时间序列 ID 和数值项等，而其中有相当一部分信息是重复的。这样的设计会导致写前日志的体积过大，增加对磁盘的写入量，从而影响写入性能。
 
 \begin{figure}
   \centering
@@ -124,7 +124,7 @@ IoTDB 支持一种名为 Last 查询的查询方式，它可以查询某个时�
   \caption{批量化更新监控信息设计}
   \label{fig:batch-update-monitor}
 \end{figure}
-我们将对监控信息的更新从一行记录更新一次减少为了一个写入请求更新一次，图 \ref{fig:batch-update-monitor} 展示了优化后的架构。我们增加了一个名为 InsertRecordsMetricsCollector 的类，这个类的每一个实例都只服务于一个 InsertRecords 写入请求。这个类中有若干个 AtomicLong 类型的字段，每个字段分别对应了一个监控指标。每个 FragmentInstance 在执行写入时都会记录自己执行时各个阶段的耗时，并将这些耗时更新到 InsertRecordsMetricsCollector 的对应字段中。当所有 FragmentInstance 都执行完毕以后，主写入线程会将 InsertRecordsMetricsCollector 中的每个字段的值分别更新到监控系统中。
+我们将对监控信息的更新从一行记录更新一次减少为一个写入请求更新一次，图 \ref{fig:batch-update-monitor} 展示了优化后的架构。我们增加了一个名为 InsertRecordsMetricsCollector 的类，这个类的每一个实例都只服务于一个 InsertRecords 写入请求。这个类中有若干个 AtomicLong 类型的字段，每个字段分别对应了一个监控指标。每个 FragmentInstance 在执行写入时都会记录自己执行时各个阶段的耗时，并将这些耗时更新到 InsertRecordsMetricsCollector 的对应字段中。当所有 FragmentInstance 都执行完毕以后，主写入线程会将 InsertRecordsMetricsCollector 中的每个字段的值分别更新到监控系统中。
 
 虽然 FragmentInstance 在执行时仍然会多次更新 InsertRecordsMetricsCollector 的字段，但是这些更新都只需要简单的 CAS（Compare And Swap）指令即可完成，而更新监控系统则需要执行对直方图的更新，后者显然更加复杂和耗时。这样的设计可以降低写入过程中更新监控信息的开销。
 \subsubsection{批量化更新内存缓存}

@@ -1,0 +1,109 @@
+<mxfile host="Electron" modified="2024-05-26T09:23:03.407Z" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/23.1.5 Chrome/120.0.6099.109 Electron/28.1.0 Safari/537.36" etag="TMuz3E_B1nWd_2PV1t9l" version="23.1.5" type="device">
+  <diagram name="第 1 页" id="_NkoYqTP0HuKaPXBV3VY">
+    <mxGraphModel dx="1025" dy="854" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="630" pageHeight="250" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-27" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;dashed=1;dashPattern=8 8;" parent="1" vertex="1">
+          <mxGeometry x="93" y="122.5" width="529" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-1" target="gdPk3_-Lvbds_Ozmcgmm-2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-1" target="gdPk3_-Lvbds_Ozmcgmm-3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-1" target="gdPk3_-Lvbds_Ozmcgmm-4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-1" value="FragmentInstance" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="6" y="17.5" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-2" target="gdPk3_-Lvbds_Ozmcgmm-9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-2" value="Record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="178" y="5" width="80" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-3" target="gdPk3_-Lvbds_Ozmcgmm-11" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-3" value="Record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="178" y="35" width="80" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-4" target="gdPk3_-Lvbds_Ozmcgmm-13" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-4" value="Record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;gradientColor=default;" parent="1" vertex="1">
+          <mxGeometry x="178" y="64" width="80" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-9" value="记录 WAL" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="297" y="6" width="90" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-11" value="记录 WAL" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="297" y="36" width="90" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-13" value="记录 WAL" style="shape=process;whiteSpace=wrap;html=1;backgroundOutline=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="297" y="65" width="90" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;dashed=1;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-15" target="gdPk3_-Lvbds_Ozmcgmm-27" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="568" y="18" />
+              <mxPoint x="568" y="100" />
+              <mxPoint x="358" y="100" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-15" value="WAL Entry" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" parent="1" vertex="1">
+          <mxGeometry x="413" y="6" width="99" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-16" value="WAL Entry" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" parent="1" vertex="1">
+          <mxGeometry x="413" y="36" width="99" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-17" value="WAL Entry" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;" parent="1" vertex="1">
+          <mxGeometry x="413" y="65" width="99" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-18" value="" style="endArrow=classic;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-9" target="gdPk3_-Lvbds_Ozmcgmm-15" edge="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="491" y="123.5" as="sourcePoint" />
+            <mxPoint x="541" y="73.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-19" value="" style="endArrow=classic;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-11" target="gdPk3_-Lvbds_Ozmcgmm-16" edge="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="397" y="28.5" as="sourcePoint" />
+            <mxPoint x="423" y="28.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-20" value="" style="endArrow=classic;html=1;rounded=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="gdPk3_-Lvbds_Ozmcgmm-13" target="gdPk3_-Lvbds_Ozmcgmm-17" edge="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="407" y="38.5" as="sourcePoint" />
+            <mxPoint x="433" y="38.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-21" value="写入类型&lt;br&gt;InsertRowNode" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="105" y="165.5" width="86" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-22" value="时间戳" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="191" y="165.5" width="42" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-23" value="设备 ID" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="233" y="165.5" width="46" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-24" value="时间序列 ID 列表" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="279" y="165.5" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-25" value="数据项" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="399" y="165.5" width="90" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-26" value="数据是否对齐&lt;br&gt;&amp;amp;&lt;br&gt;是否需要推断类型" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="489" y="165.5" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gdPk3_-Lvbds_Ozmcgmm-28" value="写前日志格式" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+          <mxGeometry x="297" y="129.5" width="90" height="26" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
